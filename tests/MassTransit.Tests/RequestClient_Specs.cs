@@ -23,8 +23,10 @@
             Assert.That(message.Message.CorrelationId, Is.EqualTo(_ping.Result.Message.CorrelationId));
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<PingMessage>> _ping;
         Task<Response<PongMessage>> _response;
+        #pragma warning restore NUnit1032
         IRequestClient<PingMessage> _requestClient;
 
         [OneTimeSetUp]
@@ -52,7 +54,9 @@
             Assert.That(async () => await _response, Throws.TypeOf<RequestTimeoutException>());
         }
 
+        #pragma warning disable NUnit1032
         Task<Response<PongMessage>> _response;
+        #pragma warning restore NUnit1032
         IRequestClient<PingMessage> _requestClient;
 
         [OneTimeSetUp]
@@ -97,8 +101,11 @@
             GC.WaitForPendingFinalizers();
             GC.Collect();
 
-            Assert.That(unhandledExceptions, Is.Empty);
-            Assert.That(unobservedTaskExceptions, Is.Empty);
+            Assert.Multiple(() =>
+            {
+                Assert.That(unhandledExceptions, Is.Empty);
+                Assert.That(unobservedTaskExceptions, Is.Empty);
+            });
         }
     }
 
@@ -113,7 +120,9 @@
         {
             var mediator = MassTransit.Bus.Factory.CreateMediator(x =>
             {
-                x.Handler<PingMessage>(async context => {});
+                x.Handler<PingMessage>(async context =>
+                {
+                });
             });
 
             List<object> unhandledExceptions = new List<object>();
@@ -140,10 +149,14 @@
             GC.WaitForPendingFinalizers();
             GC.Collect();
 
-            Assert.That(unhandledExceptions, Is.Empty, "Unhandled");
-            Assert.That(unobservedTaskExceptions, Is.Empty, "Unobserved");
+            Assert.Multiple(() =>
+            {
+                Assert.That(unhandledExceptions, Is.Empty, "Unhandled");
+                Assert.That(unobservedTaskExceptions, Is.Empty, "Unobserved");
+            });
         }
     }
+
 
     [TestFixture]
     [Explicit]
@@ -182,8 +195,11 @@
             GC.WaitForPendingFinalizers();
             GC.Collect();
 
-            Assert.That(unhandledExceptions, Is.Empty, "Unhandled");
-            Assert.That(unobservedTaskExceptions, Is.Empty, "Unobserved");
+            Assert.Multiple(() =>
+            {
+                Assert.That(unhandledExceptions, Is.Empty, "Unhandled");
+                Assert.That(unobservedTaskExceptions, Is.Empty, "Unobserved");
+            });
         }
     }
 
@@ -198,8 +214,9 @@
             Assert.That(async () => await _response, Throws.TypeOf<RequestFaultException>());
         }
 
-        Task<ConsumeContext<PingMessage>> _ping;
+        #pragma warning disable NUnit1032
         Task<Response<PongMessage>> _response;
+        #pragma warning restore NUnit1032
         IRequestClient<PingMessage> _requestClient;
 
         [OneTimeSetUp]
@@ -212,10 +229,7 @@
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
-            _ping = Handler<PingMessage>(configurator, async x =>
-            {
-                throw new InvalidOperationException("This is an expected test failure");
-            });
+            _ = Handler<PingMessage>(configurator, async _ => throw new InvalidOperationException("This is an expected test failure"));
         }
     }
 
@@ -230,8 +244,9 @@
             Assert.That(async () => await _response, Throws.TypeOf<TaskCanceledException>());
         }
 
-        Task<ConsumeContext<PingMessage>> _ping;
+        #pragma warning disable NUnit1032
         Task<Response<PongMessage>> _response;
+        #pragma warning restore NUnit1032
         IRequestClient<PingMessage> _requestClient;
 
         [OneTimeSetUp]
@@ -252,7 +267,7 @@
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
-            _ping = Handler<PingMessage>(configurator, async x =>
+            _ = Handler<PingMessage>(configurator, async x =>
             {
                 await Task.Delay(2000);
                 await x.RespondAsync(new PongMessage(x.Message.CorrelationId));

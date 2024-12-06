@@ -19,7 +19,7 @@
 
             ConsumeContext<PingMessage> context = await _received.Task;
 
-            Assert.GreaterOrEqual(_receivedTimeSpan, TimeSpan.FromSeconds(1));
+            Assert.That(_receivedTimeSpan, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(1)));
         }
 
         TaskCompletionSource<ConsumeContext<PingMessage>> _received;
@@ -74,7 +74,7 @@
 
             ConsumeContext<PingMessage> context = await _consumer.Received;
 
-            Assert.GreaterOrEqual(_consumer.ReceivedTimeSpan, TimeSpan.FromSeconds(1));
+            Assert.That(_consumer.ReceivedTimeSpan, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(1)));
         }
 
         MyConsumer _consumer;
@@ -102,7 +102,6 @@
         {
             readonly TaskCompletionSource<ConsumeContext<PingMessage>> _received;
             int _count;
-            TimeSpan _receivedTimeSpan;
             Stopwatch _timer;
 
             public MyConsumer(TaskCompletionSource<ConsumeContext<PingMessage>> taskCompletionSource)
@@ -112,7 +111,7 @@
 
             public Task<ConsumeContext<PingMessage>> Received => _received.Task;
 
-            public IComparable ReceivedTimeSpan => _receivedTimeSpan;
+            public TimeSpan ReceivedTimeSpan { get; private set; }
 
             public Task Consume(ConsumeContext<PingMessage> context)
             {
@@ -130,7 +129,7 @@
                 Console.WriteLine("{0} okay, now is good (retried {1} times)", DateTime.UtcNow, context.Headers.Get("MT-Redelivery-Count", default(int?)));
 
                 // okay, ready.
-                _receivedTimeSpan = _timer.Elapsed;
+                ReceivedTimeSpan = _timer.Elapsed;
                 _received.TrySetResult(context);
 
                 return Task.CompletedTask;
@@ -150,9 +149,12 @@
 
             ConsumeContext<PingMessage> context = await _consumer.Received;
 
-            Assert.GreaterOrEqual(_consumer.ReceivedTimeSpan, TimeSpan.FromSeconds(1));
+            Assert.Multiple(() =>
+            {
+                Assert.That(_consumer.ReceivedTimeSpan, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(1)));
 
-            Assert.That(_consumer.RedeliveryCount, Is.EqualTo(2));
+                Assert.That(_consumer.RedeliveryCount, Is.EqualTo(2));
+            });
         }
 
         MyConsumer _consumer;
@@ -178,7 +180,6 @@
         {
             readonly TaskCompletionSource<ConsumeContext<PingMessage>> _received;
             int _count;
-            TimeSpan _receivedTimeSpan;
             Stopwatch _timer;
 
             public MyConsumer(TaskCompletionSource<ConsumeContext<PingMessage>> taskCompletionSource)
@@ -188,7 +189,7 @@
 
             public Task<ConsumeContext<PingMessage>> Received => _received.Task;
 
-            public IComparable ReceivedTimeSpan => _receivedTimeSpan;
+            public TimeSpan ReceivedTimeSpan { get; private set; }
 
             public int RedeliveryCount { get; set; }
 
@@ -208,7 +209,7 @@
                 Console.WriteLine("{0} okay, now is good (retried {1} times)", DateTime.UtcNow, context.Headers.Get("MT-Redelivery-Count", default(int?)));
 
                 // okay, ready.
-                _receivedTimeSpan = _timer.Elapsed;
+                ReceivedTimeSpan = _timer.Elapsed;
                 RedeliveryCount = context.GetRedeliveryCount();
                 _received.TrySetResult(context);
 
@@ -229,7 +230,7 @@
 
             ConsumeContext<PingMessage> context = await _received.Task;
 
-            Assert.GreaterOrEqual(_receivedTimeSpan, TimeSpan.FromSeconds(1));
+            Assert.That(_receivedTimeSpan, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(1)));
         }
 
         TaskCompletionSource<ConsumeContext<PingMessage>> _received;
@@ -285,9 +286,9 @@
 
             ConsumeContext<PingMessage> context = await _received.Task;
 
-            Assert.GreaterOrEqual(_receivedTimeSpan, TimeSpan.FromSeconds(1));
+            Assert.That(_receivedTimeSpan, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(1)));
             var customHeaderValue = context.Headers.Get(customHeader, default(int?));
-            Assert.AreEqual(2, customHeaderValue);
+            Assert.That(customHeaderValue, Is.EqualTo(2));
         }
 
         TaskCompletionSource<ConsumeContext<PingMessage>> _received;

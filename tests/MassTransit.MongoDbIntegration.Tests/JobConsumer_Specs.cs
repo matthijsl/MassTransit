@@ -89,19 +89,20 @@ namespace MassTransit.MongoDbIntegration.Tests
 
                 IRequestClient<SubmitJob<OddJob>> client = harness.GetRequestClient<SubmitJob<OddJob>>();
 
-                Response<JobSubmissionAccepted> response = await client.GetResponse<JobSubmissionAccepted>(new
+                var responseJobId = await client.SubmitJob(jobId, new {Duration = TimeSpan.FromSeconds(1)}, p => p.Set("Variable", "Knife"));
+
+                await Assert.MultipleAsync(async () =>
                 {
-                    JobId = jobId,
-                    Job = new { Duration = TimeSpan.FromSeconds(1) }
+                    Assert.That(responseJobId, Is.EqualTo(jobId));
+
+                    Assert.That(await harness.Published.Any<JobSubmitted>(), Is.True);
+
+                    Assert.That(await harness.Published.Any<JobStarted>(), Is.True);
+                    Assert.That(await harness.Published.Any<JobStarted<OddJob>>(), Is.True);
+
+                    Assert.That(await harness.Published.Any<JobCompleted>(), Is.True);
+                    Assert.That(await harness.Published.Any<JobCompleted<OddJob>>(), Is.True);
                 });
-
-                Assert.That(response.Message.JobId, Is.EqualTo(jobId));
-
-                Assert.That(await harness.Published.Any<JobSubmitted>(), Is.True);
-                Assert.That(await harness.Published.Any<JobStarted>(), Is.True);
-
-                Assert.That(await harness.Published.Any<JobCompleted>(), Is.True);
-                Assert.That(await harness.Published.Any<JobCompleted<OddJob>>(), Is.True);
             }
             finally
             {

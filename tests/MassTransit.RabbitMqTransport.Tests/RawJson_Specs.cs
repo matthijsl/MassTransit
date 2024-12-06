@@ -8,6 +8,7 @@ namespace MassTransit.RabbitMqTransport.Tests
     using System.Threading.Tasks;
     using Initializers;
     using NUnit.Framework;
+    using RabbitMQ.Client;
     using Serialization;
     using TestFramework.Messages;
 
@@ -28,13 +29,16 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             var body = JsonSerializer.SerializeToUtf8Bytes(message, SystemTextJsonMessageSerializer.Options);
 
-            SendRawMessage(body);
+            await SendRawMessage(body);
 
             ConsumeContext<RawContract> received = await _receivedA;
 
-            Assert.AreEqual(message.Name, received.Message.Name);
-            Assert.AreEqual(message.Value, received.Message.Value);
-            Assert.AreEqual(message.Timestamp, received.Message.Timestamp);
+            Assert.Multiple(() =>
+            {
+                Assert.That(received.Message.Name, Is.EqualTo(message.Name));
+                Assert.That(received.Message.Value, Is.EqualTo(message.Value));
+                Assert.That(received.Message.Timestamp, Is.EqualTo(message.Timestamp));
+            });
         }
 
         Task<ConsumeContext<RawContract>> _receivedA;
@@ -47,25 +51,25 @@ namespace MassTransit.RabbitMqTransport.Tests
             _receivedA = Handled<RawContract>(configurator);
         }
 
-        void SendRawMessage(byte[] body)
+        async Task SendRawMessage(byte[] body)
         {
             try
             {
-                TestContext.Out.WriteLine(Encoding.UTF8.GetString(body));
+                await TestContext.Out.WriteLineAsync(Encoding.UTF8.GetString(body));
 
                 var settings = GetHostSettings();
                 var connectionFactory = settings.GetConnectionFactory();
 
-                using var connection = settings.EndpointResolver != null
-                    ? connectionFactory.CreateConnection(settings.EndpointResolver, settings.Host)
-                    : connectionFactory.CreateConnection();
+                await using var connection = settings.EndpointResolver != null
+                    ? await connectionFactory.CreateConnectionAsync(settings.EndpointResolver, settings.Host)
+                    : await connectionFactory.CreateConnectionAsync();
 
-                using var model = connection.CreateModel();
+                await using var channel = await connection.CreateChannelAsync();
 
-                var properties = model.CreateBasicProperties();
+                var properties = new BasicProperties();
                 properties.SetHeader(MessageHeaders.MessageId, "Whiskey-Tango-Foxtrot 3-5-9er");
 
-                model.BasicPublish(RabbitMqTestHarness.InputQueueName, "", false, properties, body);
+                await channel.BasicPublishAsync(RabbitMqTestHarness.InputQueueName, "", false, properties, body);
             }
             catch (Exception exception)
             {
@@ -102,13 +106,16 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             var body = ms.ToArray();
 
-            SendRawMessage(body);
+            await SendRawMessage(body);
 
             ConsumeContext<RawContract> received = await _receivedA;
 
-            Assert.AreEqual(message.Name, received.Message.Name);
-            Assert.AreEqual(message.Value, received.Message.Value);
-            Assert.AreEqual(message.Timestamp, received.Message.Timestamp);
+            Assert.Multiple(() =>
+            {
+                Assert.That(received.Message.Name, Is.EqualTo(message.Name));
+                Assert.That(received.Message.Value, Is.EqualTo(message.Value));
+                Assert.That(received.Message.Timestamp, Is.EqualTo(message.Timestamp));
+            });
         }
 
         Task<ConsumeContext<RawContract>> _receivedA;
@@ -121,25 +128,25 @@ namespace MassTransit.RabbitMqTransport.Tests
             _receivedA = Handled<RawContract>(configurator);
         }
 
-        void SendRawMessage(byte[] body)
+        async Task SendRawMessage(byte[] body)
         {
             try
             {
-                TestContext.Out.WriteLine(Encoding.UTF8.GetString(body));
+                await TestContext.Out.WriteLineAsync(Encoding.UTF8.GetString(body));
 
                 var settings = GetHostSettings();
                 var connectionFactory = settings.GetConnectionFactory();
 
-                using var connection = settings.EndpointResolver != null
-                    ? connectionFactory.CreateConnection(settings.EndpointResolver, settings.Host)
-                    : connectionFactory.CreateConnection();
+                await using var connection = settings.EndpointResolver != null
+                    ? await connectionFactory.CreateConnectionAsync(settings.EndpointResolver, settings.Host)
+                    : await connectionFactory.CreateConnectionAsync();
 
-                using var model = connection.CreateModel();
+                await using var channel = await connection.CreateChannelAsync();
 
-                var properties = model.CreateBasicProperties();
+                var properties = new BasicProperties();
                 properties.SetHeader(MessageHeaders.MessageId, "Whiskey-Tango-Foxtrot 3-5-9er");
 
-                model.BasicPublish(RabbitMqTestHarness.InputQueueName, "", false, properties, body);
+                await channel.BasicPublishAsync(RabbitMqTestHarness.InputQueueName, "", false, properties, body);
             }
             catch (Exception exception)
             {
@@ -177,21 +184,24 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             ConsumeContext<Command> context = await _handled;
 
-            Assert.That(context.ReceiveContext.ContentType, Is.EqualTo(SystemTextJsonRawMessageSerializer.JsonContentType),
-                $"unexpected content-type {context.ReceiveContext.ContentType}");
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.ReceiveContext.ContentType, Is.EqualTo(SystemTextJsonRawMessageSerializer.JsonContentType),
+                    $"unexpected content-type {context.ReceiveContext.ContentType}");
 
-            Assert.That(context.Message.CommandId, Is.EqualTo(message.CommandId));
-            Assert.That(context.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
+                Assert.That(context.Message.CommandId, Is.EqualTo(message.CommandId));
+                Assert.That(context.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
 
-            Assert.That(context.Headers.Get<string>(headerName), Is.EqualTo(headerValue));
+                Assert.That(context.Headers.Get<string>(headerName), Is.EqualTo(headerValue));
 
-            Assert.IsTrue(context.MessageId.HasValue);
-            Assert.IsTrue(context.ConversationId.HasValue);
-            Assert.IsTrue(context.CorrelationId.HasValue);
-            Assert.IsTrue(context.SentTime.HasValue);
-            Assert.IsNotNull(context.DestinationAddress);
-            Assert.IsNotNull(context.Host);
-            Assert.That(context.SupportedMessageTypes.Count(), Is.EqualTo(1));
+                Assert.That(context.MessageId.HasValue, Is.True);
+                Assert.That(context.ConversationId.HasValue, Is.True);
+                Assert.That(context.CorrelationId.HasValue, Is.True);
+                Assert.That(context.SentTime.HasValue, Is.True);
+                Assert.That(context.DestinationAddress, Is.Not.Null);
+                Assert.That(context.Host, Is.Not.Null);
+                Assert.That(context.SupportedMessageTypes.Count(), Is.EqualTo(1));
+            });
         }
 
         Task<ConsumeContext<Command>> _handled;
@@ -251,12 +261,15 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             ConsumeContext<PingMessage> context = await _handled;
 
-            Assert.That(context.ReceiveContext.ContentType, Is.EqualTo(NewtonsoftJsonMessageSerializer.JsonContentType),
-                $"unexpected content-type {context.ReceiveContext.ContentType}");
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.ReceiveContext.ContentType, Is.EqualTo(NewtonsoftJsonMessageSerializer.JsonContentType),
+                    $"unexpected content-type {context.ReceiveContext.ContentType}");
 
-            Assert.That(context.Message.CorrelationId, Is.EqualTo(message.CommandId));
+                Assert.That(context.Message.CorrelationId, Is.EqualTo(message.CommandId));
 
-            Assert.That(context.Headers.Get<string>(headerName), Is.EqualTo(default));
+                Assert.That(context.Headers.Get<string>(headerName), Is.EqualTo(default));
+            });
         }
 
         Task<ConsumeContext<PingMessage>> _handled;

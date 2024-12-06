@@ -2,11 +2,11 @@
 {
     using System;
     using System.Threading.Tasks;
-    using MassTransit.Testing;
     using Microsoft.Extensions.DependencyInjection;
     using NUnit.Framework;
     using RabbitMQ.Client;
     using TestFramework.Messages;
+    using Testing;
 
 
     [TestFixture]
@@ -47,10 +47,12 @@
             });
         }
 
-        protected override void OnCleanupVirtualHost(IModel model)
+        protected override async Task OnCleanupVirtualHost(IChannel channel)
         {
-            model.ExchangeDelete("priority_input_queue");
-            model.QueueDelete("priority_input_queue");
+            await base.OnCleanupVirtualHost(channel);
+
+            await channel.ExchangeDeleteAsync("priority_input_queue");
+            await channel.QueueDeleteAsync("priority_input_queue");
         }
     }
 
@@ -118,8 +120,11 @@
 
             Assert.That(message, Is.Not.Null);
 
-            Assert.That(message.Context.TryGetPayload<RabbitMqBasicConsumeContext>(out var rmqContext), Is.True);
-            Assert.That(rmqContext.Properties.Priority, Is.EqualTo(3));
+            Assert.Multiple(() =>
+            {
+                Assert.That(message.Context.TryGetPayload<RabbitMqBasicConsumeContext>(out var rmqContext), Is.True);
+                Assert.That(rmqContext.Properties.Priority, Is.EqualTo(3));
+            });
         }
 
 

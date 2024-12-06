@@ -20,9 +20,12 @@ namespace MassTransit.Tests.Courier
         {
             ConsumeContext<RoutingSlipCompleted> context = await _completed;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
 
-            Assert.AreEqual("Frank", context.GetVariable<string>("Name"));
+                Assert.That(context.GetVariable<string>("Name"), Is.EqualTo("Frank"));
+            });
         }
 
         [Test]
@@ -30,7 +33,7 @@ namespace MassTransit.Tests.Courier
         {
             ConsumeContext<RoutingSlipActivityCompleted> context = await _activityCompleted;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
         }
 
         public Using_message_data_arguments()
@@ -38,9 +41,11 @@ namespace MassTransit.Tests.Courier
             TestTimeout = TimeSpan.FromSeconds(5);
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<RoutingSlipCompleted>> _completed;
         Task<ConsumeContext<RoutingSlipActivityCompleted>> _activityCompleted;
         Task<ConsumeContext<RoutingSlipFaulted>> _faulted;
+        #pragma warning restore NUnit1032
         Guid _trackingNumber;
         readonly IMessageDataRepository _repository = new InMemoryMessageDataRepository();
 

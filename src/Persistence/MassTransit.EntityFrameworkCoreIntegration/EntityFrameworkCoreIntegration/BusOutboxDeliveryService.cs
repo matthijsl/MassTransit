@@ -62,23 +62,29 @@ namespace MassTransit.EntityFrameworkCoreIntegration
             using var algorithm = new RequestRateAlgorithm(new RequestRateAlgorithmOptions
             {
                 PrefetchCount = _options.QueryMessageLimit,
-                RequestResultLimit = 10
+                RequestResultLimit = 10,
             });
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
-                    await _notification.WaitForDelivery(stoppingToken).ConfigureAwait(false);
-
                     await _busControl.WaitForHealthStatus(BusHealthStatus.Healthy, stoppingToken).ConfigureAwait(false);
 
-                    await algorithm.Run(DeliverOutbox, stoppingToken).ConfigureAwait(false);
+                    var count = await algorithm.Run(DeliverOutbox, stoppingToken).ConfigureAwait(false);
+                    if (count > 0)
+                        continue;
+
+                    await _notification.WaitForDelivery(stoppingToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
                 }
                 catch (DbUpdateConcurrencyException)
+                {
+                }
+                catch (InvalidOperationException exception) when (exception.InnerException != null
+                                                                  && exception.InnerException.Message.Contains("concurrent update"))
                 {
                 }
                 catch (Exception exception)
@@ -89,23 +95,6 @@ namespace MassTransit.EntityFrameworkCoreIntegration
         }
 
         async Task<int> DeliverOutbox(int resultLimit, CancellationToken cancellationToken)
-        {
-            var resultCount = 0;
-
-            for (var i = 0; i < resultLimit; i++)
-            {
-                var messageCount = await DeliverOutbox(cancellationToken).ConfigureAwait(false);
-                if (messageCount > 0)
-                    resultCount++;
-
-                if (messageCount == 0)
-                    break;
-            }
-
-            return resultCount;
-        }
-
-        async Task<int> DeliverOutbox(CancellationToken cancellationToken)
         {
             var scope = _provider.CreateAsyncScope();
 
@@ -158,14 +147,9 @@ namespace MassTransit.EntityFrameworkCoreIntegration
                     {
                         throw;
                     }
-                    catch (DbUpdateConcurrencyException)
+                    catch (InvalidOperationException exception) when (exception.InnerException != null
+                                                                      && exception.InnerException.Message.Contains("concurrent update"))
                     {
-                        await RollbackTransaction(transaction).ConfigureAwait(false);
-                        throw;
-                    }
-                    catch (DbUpdateException)
-                    {
-                        await RollbackTransaction(transaction).ConfigureAwait(false);
                         throw;
                     }
                     catch (Exception)
@@ -175,16 +159,17 @@ namespace MassTransit.EntityFrameworkCoreIntegration
                     }
                 }
 
-                var messageCount = 0;
+                var executionStrategy = dbContext.Database.CreateExecutionStrategy();
 
-                var executeResult = 1;
-                while (executeResult >= 0)
+                var messageCount = 0;
+                while (messageCount < resultLimit)
                 {
-                    var executionStrategy = dbContext.Database.CreateExecutionStrategy();
-                    if (executionStrategy is ExecutionStrategy)
-                        executeResult = await executionStrategy.ExecuteAsync(() => Execute()).ConfigureAwait(false);
-                    else
-                        executeResult = await Execute().ConfigureAwait(false);
+                    var executeResult = executionStrategy is ExecutionStrategy
+                        ? await executionStrategy.ExecuteAsync(() => Execute()).ConfigureAwait(false)
+                        : await Execute().ConfigureAwait(false);
+
+                    if (executeResult < 0)
+                        break;
 
                     if (executeResult > 0)
                         messageCount += executeResult;
@@ -205,7 +190,6 @@ namespace MassTransit.EntityFrameworkCoreIntegration
         {
             List<OutboxMessage> messages = await dbContext.Set<OutboxMessage>()
                 .Where(x => x.OutboxId == outboxState.OutboxId)
-                .OrderBy(x => x.SequenceNumber)
                 .ToListAsync(cancellationToken);
 
             dbContext.RemoveRange(messages);

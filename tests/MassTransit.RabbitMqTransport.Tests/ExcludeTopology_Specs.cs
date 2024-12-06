@@ -20,24 +20,27 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             ConsumeContext<TransactionEvent> context = await _handled;
 
-            Assert.IsTrue(context.CorrelationId.HasValue);
-            Assert.That(context.CorrelationId.Value, Is.EqualTo(transactionId));
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.CorrelationId.HasValue, Is.True);
+                Assert.That(context.CorrelationId.Value, Is.EqualTo(transactionId));
+            });
 
             var settings = GetHostSettings();
 
             var connectionFactory = settings.GetConnectionFactory();
 
-            using var connection = settings.EndpointResolver != null
-                ? connectionFactory.CreateConnection(settings.EndpointResolver, settings.Host)
-                : connectionFactory.CreateConnection();
+            await using var connection = settings.EndpointResolver != null
+                ? await connectionFactory.CreateConnectionAsync(settings.EndpointResolver, settings.Host)
+                : await connectionFactory.CreateConnectionAsync();
 
-            using var model = connection.CreateModel();
+            await using var channel = await connection.CreateChannelAsync();
 
-            var eventExchangeName = RabbitMqBusFactory.MessageTopology.EntityNameFormatter.FormatEntityName<IEvent>();
+            var eventExchangeName = RabbitMqBusFactory.CreateMessageTopology().EntityNameFormatter.FormatEntityName<IEvent>();
 
-            var exception = Assert.Throws<OperationInterruptedException>(() => model.ExchangeDeclarePassive(eventExchangeName));
+            Assert.That(async () => await channel.ExchangeDeclarePassiveAsync(eventExchangeName), Throws.TypeOf<OperationInterruptedException>().With
+                .Property("ShutdownReason").Property("ReplyCode").EqualTo(404));
 
-            Assert.That(exception.ShutdownReason.ReplyCode, Is.EqualTo(404));
         }
 
         Task<ConsumeContext<TransactionEvent>> _handled;
@@ -55,15 +58,15 @@ namespace MassTransit.RabbitMqTransport.Tests
             _handled = Handled<TransactionEvent>(configurator);
         }
 
-        protected override void OnCleanupVirtualHost(IModel model)
+        protected override async Task OnCleanupVirtualHost(IChannel channel)
         {
-            base.OnCleanupVirtualHost(model);
+            await base.OnCleanupVirtualHost(channel);
 
-            var eventExchangeName = RabbitMqBusFactory.MessageTopology.EntityNameFormatter.FormatEntityName<IEvent>();
-            model.ExchangeDelete(eventExchangeName);
+            var eventExchangeName = RabbitMqBusFactory.CreateMessageTopology().EntityNameFormatter.FormatEntityName<IEvent>();
+            await channel.ExchangeDeleteAsync(eventExchangeName);
 
-            var routedEventExchangeName = RabbitMqBusFactory.MessageTopology.EntityNameFormatter.FormatEntityName<TransactionEvent>();
-            model.ExchangeDelete(routedEventExchangeName);
+            var routedEventExchangeName = RabbitMqBusFactory.CreateMessageTopology().EntityNameFormatter.FormatEntityName<TransactionEvent>();
+            await channel.ExchangeDeleteAsync(routedEventExchangeName);
         }
     }
 

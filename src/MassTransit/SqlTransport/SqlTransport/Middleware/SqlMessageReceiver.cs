@@ -19,8 +19,12 @@ namespace MassTransit.SqlTransport.Middleware
     {
         readonly ClientContext _client;
         readonly SqlReceiveEndpointContext _context;
-        readonly IChannelExecutorPool<SqlTransportMessage> _executorPool;
+        readonly OrderedChannelExecutorPool _executorPool;
+        readonly object _lock = new();
         readonly ReceiveSettings _receiveSettings;
+        CancellationTokenSource _cancellationTokenSource;
+
+        DateTime? _lastMetricUpdate;
 
         /// <summary>
         /// The basic consumer receives messages pushed from the broker.
@@ -62,7 +66,7 @@ namespace MassTransit.SqlTransport.Middleware
             {
                 var lockContext = new SqlReceiveLockContext(_context.InputAddress, message, _receiveSettings, _client);
 
-                return _receiveSettings.ReceiveMode != SqlReceiveMode.Normal
+                return _receiveSettings.ReceiveMode == SqlReceiveMode.Normal
                     ? HandleMessage(message, lockContext)
                     : _executorPool.Run(message, () => HandleMessage(message, lockContext), cancellationToken);
             }
@@ -70,7 +74,7 @@ namespace MassTransit.SqlTransport.Middleware
             try
             {
                 while (!IsStopping)
-                    await algorithm.Run(ReceiveMessages, (m, c) => Handle(m, c), Stopping).ConfigureAwait(false);
+                    await algorithm.Run((messageLimit, token) => ReceiveMessages(messageLimit, token), (m, c) => Handle(m, c), Stopping).ConfigureAwait(false);
             }
             catch (OperationCanceledException exception) when (exception.CancellationToken == Stopping)
             {
@@ -86,7 +90,8 @@ namespace MassTransit.SqlTransport.Middleware
             if (IsStopping)
                 return;
 
-            var context = new SqlReceiveContext(message, message.DeliveryCount > 0, _context, _receiveSettings, _client, _client.ConnectionContext, lockContext);
+            var context =
+                new SqlReceiveContext(message, message.DeliveryCount > 0, _context, _receiveSettings, _client, _client.ConnectionContext, lockContext);
             try
             {
                 await Dispatch(message.TransportMessageId, context, lockContext).ConfigureAwait(false);
@@ -99,6 +104,8 @@ namespace MassTransit.SqlTransport.Middleware
             {
                 context.Dispose();
             }
+
+            MessageHandled();
         }
 
         async Task<IEnumerable<SqlTransportMessage>> ReceiveMessages(int messageLimit, CancellationToken cancellationToken)
@@ -106,23 +113,23 @@ namespace MassTransit.SqlTransport.Middleware
             try
             {
                 IList<SqlTransportMessage> messages = (await _client.ReceiveMessages(_receiveSettings.EntityName, _receiveSettings.ReceiveMode, messageLimit,
-                    _receiveSettings.LockDuration).ConfigureAwait(false)).ToList();
+                    _receiveSettings.ConcurrentDeliveryLimit, _receiveSettings.LockDuration).ConfigureAwait(false)).ToList();
 
                 if (messages.Count > 0)
                     return messages;
 
-                try
+                if (_receiveSettings.AutoDeleteOnIdle.HasValue)
                 {
-                    var delayTask = _receiveSettings.QueueId.HasValue
-                        ? _client.ConnectionContext.DelayUntilMessageReady(_receiveSettings.QueueId.Value, _receiveSettings.PollingInterval,
-                            cancellationToken)
-                        : Task.Delay(_receiveSettings.PollingInterval, cancellationToken);
+                    if (_lastMetricUpdate.HasValue == false
+                        || _lastMetricUpdate.Value + new TimeSpan(_receiveSettings.AutoDeleteOnIdle.Value.Ticks / 2) > DateTime.UtcNow)
+                    {
+                        await _client.TouchQueue(_receiveSettings.EntityName).ConfigureAwait(false);
 
-                    await delayTask.ConfigureAwait(false);
+                        _lastMetricUpdate = DateTime.UtcNow;
+                    }
                 }
-                catch (OperationCanceledException)
-                {
-                }
+
+                await WaitForPollingIntervalOrMessageHandled(cancellationToken).ConfigureAwait(false);
 
                 return messages;
             }
@@ -130,6 +137,39 @@ namespace MassTransit.SqlTransport.Middleware
             {
                 return Array.Empty<SqlTransportMessage>();
             }
+        }
+
+        public async Task WaitForPollingIntervalOrMessageHandled(CancellationToken cancellationToken)
+        {
+            lock (_lock)
+                _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+            try
+            {
+                var delayTask = _receiveSettings.QueueId.HasValue
+                    ? _client.ConnectionContext.DelayUntilMessageReady(_receiveSettings.QueueId.Value, _receiveSettings.PollingInterval,
+                        _cancellationTokenSource.Token)
+                    : Task.Delay(_receiveSettings.PollingInterval, _cancellationTokenSource.Token);
+
+                await delayTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            finally
+            {
+                lock (_lock)
+                {
+                    _cancellationTokenSource.Dispose();
+                    _cancellationTokenSource = null;
+                }
+            }
+        }
+
+        public void MessageHandled()
+        {
+            lock (_lock)
+                _cancellationTokenSource?.Cancel();
         }
 
 
@@ -163,7 +203,7 @@ namespace MassTransit.SqlTransport.Middleware
             static byte[] PartitionKeyProvider(SqlTransportMessage message)
             {
                 return string.IsNullOrEmpty(message.PartitionKey)
-                    ? Array.Empty<byte>()
+                    ? []
                     : Encoding.UTF8.GetBytes(message.PartitionKey);
             }
         }

@@ -1,5 +1,6 @@
 namespace MassTransit.MessageData.Conventions
 {
+    using System.Diagnostics.CodeAnalysis;
     using MassTransit.Configuration;
 
 
@@ -14,7 +15,7 @@ namespace MassTransit.MessageData.Conventions
                 new Factory(repository));
         }
 
-        public bool TryGetMessageConsumeTopologyConvention<T>(out IMessageConsumeTopologyConvention<T> convention)
+        public bool TryGetMessageConsumeTopologyConvention<T>([NotNullWhen(true)] out IMessageConsumeTopologyConvention<T> convention)
             where T : class
         {
             return _cache.GetOrAdd<T, IMessageConsumeTopologyConvention<T>>().TryGetMessageConsumeTopologyConvention(out convention);

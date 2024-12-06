@@ -5,12 +5,11 @@ namespace MassTransit.SagaStateMachine
 
     public class ConditionalActivityBinder<TSaga> :
         IActivityBinder<TSaga>
-        where TSaga : class, ISaga
+        where TSaga : class, SagaStateMachineInstance
     {
         readonly StateMachineAsyncCondition<TSaga> _condition;
         readonly EventActivities<TSaga> _elseActivities;
         readonly EventActivities<TSaga> _thenActivities;
-        public Event Event { get; }
 
         public ConditionalActivityBinder(Event @event, StateMachineCondition<TSaga> condition,
             EventActivities<TSaga> thenActivities, EventActivities<TSaga> elseActivities)
@@ -26,6 +25,8 @@ namespace MassTransit.SagaStateMachine
             _condition = condition;
             Event = @event;
         }
+
+        public Event Event { get; }
 
         public bool IsStateTransitionEvent(State state)
         {
@@ -67,13 +68,12 @@ namespace MassTransit.SagaStateMachine
 
     public class ConditionalActivityBinder<TSaga, TMessage> :
         IActivityBinder<TSaga>
-        where TSaga : class, ISaga
+        where TSaga : class, SagaStateMachineInstance
         where TMessage : class
     {
         readonly StateMachineAsyncCondition<TSaga, TMessage> _condition;
         readonly EventActivities<TSaga> _elseActivities;
         readonly EventActivities<TSaga> _thenActivities;
-        public Event Event { get; }
 
         public ConditionalActivityBinder(Event @event, StateMachineCondition<TSaga, TMessage> condition,
             EventActivities<TSaga> thenActivities, EventActivities<TSaga> elseActivities)
@@ -89,6 +89,8 @@ namespace MassTransit.SagaStateMachine
             _condition = condition;
             Event = @event;
         }
+
+        public Event Event { get; }
 
         public bool IsStateTransitionEvent(State state)
         {

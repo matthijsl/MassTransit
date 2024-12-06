@@ -12,7 +12,7 @@ namespace MassTransit.SqlTransport.Topology
         ISqlConsumeTopologyConfigurator
     {
         readonly ISqlPublishTopology _publishTopology;
-        readonly IList<ISqlConsumeTopologySpecification> _specifications;
+        readonly List<ISqlConsumeTopologySpecification> _specifications;
 
         public SqlConsumeTopology(ISqlPublishTopology publishTopology)
             : base(255)
@@ -65,7 +65,7 @@ namespace MassTransit.SqlTransport.Topology
             return base.Validate().Concat(_specifications.SelectMany(x => x.Validate()));
         }
 
-        protected override IMessageConsumeTopologyConfigurator CreateMessageTopology<T>(Type type)
+        protected override IMessageConsumeTopologyConfigurator CreateMessageTopology<T>()
         {
             var messageTopology = new SqlMessageConsumeTopology<T>(_publishTopology.GetMessageTopology<T>());
 

@@ -1,6 +1,7 @@
 namespace MassTransit
 {
     using System;
+    using System.Diagnostics.CodeAnalysis;
     using Configuration;
 
 
@@ -55,7 +56,7 @@ namespace MassTransit
         /// <param name="convention"></param>
         /// <typeparam name="TConvention"></typeparam>
         /// <returns></returns>
-        bool TryGetConvention<TConvention>(out TConvention? convention)
+        bool TryGetConvention<TConvention>([NotNullWhen(true)] out TConvention? convention)
             where TConvention : class, IMessageSendTopologyConvention<TMessage>;
     }
 
@@ -63,5 +64,6 @@ namespace MassTransit
     public interface IMessageSendTopologyConfigurator :
         ISpecification
     {
+        bool TryAddConvention(ISendTopologyConvention convention);
     }
 }

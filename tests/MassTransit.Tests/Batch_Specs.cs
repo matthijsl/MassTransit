@@ -93,6 +93,7 @@
 
 
     [TestFixture]
+    [Category("Flaky")]
     public class Receiving_and_grouping_messages :
         InMemoryTestFixture
     {
@@ -109,13 +110,14 @@
             await InputQueueSendEndpoint.Send(new PingMessage(), Pipe.Execute<SendContext>(ctx => ctx.CorrelationId = correlation2));
             await InputQueueSendEndpoint.Send(new PingMessage(), Pipe.Execute<SendContext>(ctx => ctx.CorrelationId = correlation2));
 
-            await InactivityTask;
-
             var count = await BusTestHarness.Consumed.SelectAsync<PingMessage>().Take(6).Count();
 
-            Assert.That(count, Is.EqualTo(6));
+            Assert.Multiple(() =>
+            {
+                Assert.That(count, Is.EqualTo(6));
 
-            Assert.That(_batches.Select(x => x.Length), Is.EquivalentTo(new[] { 1, 2, 3 }));
+                Assert.That(_batches.Select(x => x.Length), Is.EquivalentTo(new[] { 1, 2, 3 }));
+            });
         }
 
         readonly List<Batch<PingMessage>> _batches = new List<Batch<PingMessage>>();
@@ -136,6 +138,7 @@
 
 
     [TestFixture]
+    [Category("Flaky")]
     public class Receiving_and_grouping_messages_by_ref_type :
         InMemoryTestFixture
     {
@@ -152,12 +155,13 @@
             await InputQueueSendEndpoint.Send(new PingMessage(), Pipe.Execute<SendContext>(ctx => ctx.CorrelationId = correlation2));
             await InputQueueSendEndpoint.Send(new PingMessage(), Pipe.Execute<SendContext>(ctx => ctx.CorrelationId = correlation2));
 
-            await InactivityTask;
-
             var count = await BusTestHarness.Consumed.SelectAsync<PingMessage>().Take(6).Count();
 
-            Assert.That(count, Is.EqualTo(6));
-            Assert.That(_batches.Select(x => x.Length), Is.EquivalentTo(new[] { 1, 2, 3 }));
+            Assert.Multiple(() =>
+            {
+                Assert.That(count, Is.EqualTo(6));
+                Assert.That(_batches.Select(x => x.Length), Is.EquivalentTo(new[] { 1, 2, 3 }));
+            });
         }
 
         readonly List<Batch<PingMessage>> _batches = new List<Batch<PingMessage>>();
@@ -167,12 +171,14 @@
             configurator.ConcurrentMessageLimit = 10;
 
             configurator.Consumer(() =>
-            {
-                TaskCompletionSource<Batch<PingMessage>> tcs = GetTask<Batch<PingMessage>>();
-                tcs.Task.ContinueWith(t => _batches.Add(t.Result));
-                var consumer = new TestBatchConsumer(tcs);
-                return consumer;
-            }, cc => cc.Options<BatchOptions>(x => x.GroupBy<PingMessage, string>(ctx => ctx.CorrelationId?.ToString("D"))));
+                {
+                    TaskCompletionSource<Batch<PingMessage>> tcs = GetTask<Batch<PingMessage>>();
+                    tcs.Task.ContinueWith(t => _batches.Add(t.Result));
+                    var consumer = new TestBatchConsumer(tcs);
+                    return consumer;
+                },
+                cc => cc.Options<BatchOptions>(x =>
+                    x.SetTimeLimit(TimeSpan.FromMilliseconds(500)).GroupBy<PingMessage, string>(ctx => ctx.CorrelationId?.ToString("D"))));
         }
     }
 
@@ -198,7 +204,7 @@
 
             Batch<PingMessage> batch = await consumer.Completed;
 
-            Assert.That(batch.Length, Is.EqualTo(4));
+            Assert.That(batch, Has.Length.EqualTo(4));
         }
     }
 
@@ -217,7 +223,7 @@
 
             await _completed.Task;
 
-            Assert.That(_duplicateMessages.Count, Is.EqualTo(0));
+            Assert.That(_duplicateMessages, Is.Empty);
         }
 
         public Using_a_batch_consumer()

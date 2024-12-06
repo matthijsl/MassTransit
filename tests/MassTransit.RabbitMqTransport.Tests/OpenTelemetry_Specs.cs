@@ -7,7 +7,6 @@ namespace MassTransit.RabbitMqTransport.Tests
     using HarnessContracts;
     using Initializers;
     using Logging;
-    using MassTransit.Testing;
     using Mediator;
     using Microsoft.Extensions.DependencyInjection;
     using NUnit.Framework;
@@ -16,6 +15,7 @@ namespace MassTransit.RabbitMqTransport.Tests
     using OpenTelemetry.Trace;
     using TestFramework.Courier;
     using TestFramework.Messages;
+    using Testing;
 
 
     [TestFixture]
@@ -25,9 +25,8 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public async Task Should_carry_the_baggage_with_newtonsoft()
         {
-            using var tracerProvider = CreateTraceProvider("order-api");
-
             var services = new ServiceCollection();
+            AddTraceListener(services, "order-api");
 
             await using var provider = services
                 .AddMassTransitTestHarness(x =>
@@ -63,19 +62,21 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             activity?.Stop();
 
-            Assert.IsTrue(await harness.Sent.Any<OrderSubmitted>());
+            await Assert.MultipleAsync(async () =>
+            {
+                Assert.That(await harness.Sent.Any<OrderSubmitted>(), Is.True);
 
-            Assert.IsTrue(await harness.Consumed.Any<SubmitOrder>());
+                Assert.That(await harness.Consumed.Any<SubmitOrder>(), Is.True);
 
-            Assert.That(response.Headers.Get<string>("BaggageValue"), Is.EqualTo("IsFull"));
+                Assert.That(response.Headers.Get<string>("BaggageValue"), Is.EqualTo("IsFull"));
+            });
         }
 
         [Test]
         public async Task Should_report_telemetry_to_jaeger()
         {
-            using var tracerProvider = CreateTraceProvider("order-api");
-
             var services = new ServiceCollection();
+            AddTraceListener(services, "order-api");
 
             await using var provider = services
                 .AddMassTransitTestHarness(x =>
@@ -109,19 +110,21 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             activity?.Stop();
 
-            Assert.IsTrue(await harness.Sent.Any<OrderSubmitted>());
+            await Assert.MultipleAsync(async () =>
+            {
+                Assert.That(await harness.Sent.Any<OrderSubmitted>(), Is.True);
 
-            Assert.IsTrue(await harness.Consumed.Any<SubmitOrder>());
+                Assert.That(await harness.Consumed.Any<SubmitOrder>(), Is.True);
 
-            Assert.That(response.Headers.Get<string>("BaggageValue"), Is.EqualTo("IsFull"));
+                Assert.That(response.Headers.Get<string>("BaggageValue"), Is.EqualTo("IsFull"));
+            });
         }
 
         [Test]
         public async Task Should_report_telemetry_to_jaeger_for_batch_consumer()
         {
-            using var tracerProvider = CreateTraceProvider("order-api");
-
             var services = new ServiceCollection();
+            AddTraceListener(services, "order-api");
 
             await using var provider = services
                 .AddMassTransitTestHarness(x =>
@@ -155,7 +158,7 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             activity?.Stop();
 
-            Assert.IsTrue(await harness.Consumed.Any<OrderSubmitted>());
+            Assert.That(await harness.Consumed.Any<OrderSubmitted>(), Is.True);
 
             await harness.Stop();
         }
@@ -163,9 +166,8 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public async Task Should_report_telemetry_to_jaeger_for_routing_slip()
         {
-            using var tracerProvider = CreateTraceProvider("routing-api");
-
             var services = new ServiceCollection();
+            AddTraceListener(services, "routing-api");
 
             await using var provider = services
                 .AddMassTransitTestHarness(x =>
@@ -194,16 +196,18 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             Response<ActivityCompleted> response = await client.GetResponse<ActivityCompleted>(new { Value = "Hello" });
 
-            Assert.That(response.Message.Value, Is.EqualTo("Hello, World!"));
-            Assert.That(response.Message.Variable, Is.EqualTo("Knife"));
+            Assert.Multiple(() =>
+            {
+                Assert.That(response.Message.Value, Is.EqualTo("Hello, World!"));
+                Assert.That(response.Message.Variable, Is.EqualTo("Knife"));
+            });
         }
 
         [Test]
         public async Task Should_report_telemetry_to_jaeger_from_mediator()
         {
-            using var tracerProvider = CreateTraceProvider("mediator");
-
             var services = new ServiceCollection();
+            AddTraceListener(services, "mediator");
 
             await using var provider = services
                 .AddMediator(x =>
@@ -229,9 +233,10 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public async Task Should_support_the_saga_harness()
         {
-            using var tracerProvider = CreateTraceProvider("saga-api");
+            var services = new ServiceCollection();
+            AddTraceListener(services, "saga-api");
 
-            await using var provider = new ServiceCollection()
+            await using var provider = services
                 .AddMassTransitTestHarness(x =>
                 {
                     x.SetKebabCaseEndpointNameFormatter();
@@ -256,42 +261,47 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             await harness.Bus.Publish(new Start { CorrelationId = sagaId });
 
-            Assert.IsTrue(await harness.Consumed.Any<Start>(), "Message not received");
+            Assert.That(await harness.Consumed.Any<Start>(), Is.True, "Message not received");
 
             var sagaHarness = provider.GetRequiredService<ISagaStateMachineTestHarness<TestStateMachine, Instance>>();
 
-            Assert.That(await sagaHarness.Consumed.Any<Start>());
+            await Assert.MultipleAsync(async () =>
+            {
+                Assert.That(await sagaHarness.Consumed.Any<Start>());
 
-            Assert.That(await sagaHarness.Created.Any(x => x.CorrelationId == sagaId));
+                Assert.That(await sagaHarness.Created.Any(x => x.CorrelationId == sagaId));
+            });
 
             var machine = provider.GetRequiredService<TestStateMachine>();
 
             var instance = sagaHarness.Created.ContainsInState(sagaId, machine, machine.Running);
-            Assert.IsNotNull(instance, "Saga instance not found");
+            await Assert.MultipleAsync(async () =>
+            {
+                Assert.That(instance, Is.Not.Null, "Saga instance not found");
 
-            Assert.IsTrue(await harness.Published.Any<Started>(), "Event not published");
+                Assert.That(await harness.Published.Any<Started>(), Is.True, "Event not published");
+            });
         }
 
-        static TracerProvider CreateTraceProvider(string serviceName)
+        static void AddTraceListener(IServiceCollection services, string serviceName)
         {
-            return Sdk.CreateTracerProviderBuilder()
-                .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(serviceName))
-                .AddSource("MassTransit")
-                .AddJaegerExporter(o =>
-                {
-                    o.AgentHost = "localhost";
-                    o.AgentPort = 6831;
-                    o.MaxPayloadSizeInBytes = 4096;
-                    o.ExportProcessorType = ExportProcessorType.Batch;
-                    o.BatchExportProcessorOptions = new BatchExportProcessorOptions<System.Diagnostics.Activity>
+            services.AddOpenTelemetry()
+                .WithTracing(t => t.SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(serviceName))
+                    .AddSource(DiagnosticHeaders.DefaultListenerName)
+                    .AddJaegerExporter(o =>
                     {
-                        MaxQueueSize = 2048,
-                        ScheduledDelayMilliseconds = 5000,
-                        ExporterTimeoutMilliseconds = 30000,
-                        MaxExportBatchSize = 512,
-                    };
-                })
-                .Build();
+                        o.AgentHost = "localhost";
+                        o.AgentPort = 6831;
+                        o.MaxPayloadSizeInBytes = 4096;
+                        o.ExportProcessorType = ExportProcessorType.Batch;
+                        o.BatchExportProcessorOptions = new BatchExportProcessorOptions<System.Diagnostics.Activity>
+                        {
+                            MaxQueueSize = 2048,
+                            ScheduledDelayMilliseconds = 5000,
+                            ExporterTimeoutMilliseconds = 30000,
+                            MaxExportBatchSize = 512
+                        };
+                    }));
         }
 
 

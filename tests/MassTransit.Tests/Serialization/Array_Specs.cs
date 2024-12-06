@@ -43,8 +43,11 @@
 
                 var result = SerializeAndReturn(someArray);
 
-                Assert.That(someArray.Elements, Is.Null);
-                Assert.That(result.Elements, Is.Null);
+                Assert.Multiple(() =>
+                {
+                    Assert.That(someArray.Elements, Is.Null);
+                    Assert.That(result.Elements, Is.Null);
+                });
             }
 
             [Test]
@@ -58,19 +61,19 @@
                 var result = SerializeAndReturn(someArray);
 
                 Assert.That(result.Elements, Is.Not.Null);
-                Assert.That(result.Elements.Length, Is.EqualTo(1));
+                Assert.That(result.Elements, Has.Length.EqualTo(1));
             }
 
             [Test]
             public void Should_serialize_a_single_element_collection()
             {
                 var someArray = new SomeCollection();
-                someArray.Elements = new ArrayElement[1] {new ArrayElement {Value = 27}};
+                someArray.Elements = new ArrayElement[1] { new ArrayElement { Value = 27 } };
 
                 var result = SerializeAndReturn(someArray);
 
                 Assert.That(result.Elements, Is.Not.Null);
-                Assert.That(result.Elements.Count, Is.EqualTo(1));
+                Assert.That(result.Elements, Has.Count.EqualTo(1));
             }
 
             public A_null_array(Type serializerType)

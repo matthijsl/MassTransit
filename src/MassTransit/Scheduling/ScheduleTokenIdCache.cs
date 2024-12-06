@@ -1,7 +1,6 @@
 namespace MassTransit.Scheduling
 {
     using System;
-    using System.Threading;
 
 
     /// <summary>
@@ -59,8 +58,7 @@ namespace MassTransit.Scheduling
 
         static class Cached
         {
-            internal static Lazy<IScheduleTokenIdCache<T>> Metadata = new Lazy<IScheduleTokenIdCache<T>>(
-                () => new ScheduleTokenIdCache<T>(), LazyThreadSafetyMode.PublicationOnly);
+            internal static Lazy<IScheduleTokenIdCache<T>> Metadata = new Lazy<IScheduleTokenIdCache<T>>(() => new ScheduleTokenIdCache<T>());
         }
     }
 }

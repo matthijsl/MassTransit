@@ -14,7 +14,7 @@ namespace MassTransit.InMemoryTransport
     {
         readonly IMessageTopology _messageTopology;
         readonly IInMemoryPublishTopologyConfigurator _publishTopology;
-        readonly IList<IInMemoryConsumeTopologySpecification> _specifications;
+        readonly List<IInMemoryConsumeTopologySpecification> _specifications;
 
         public InMemoryConsumeTopology(IMessageTopology messageTopology, IInMemoryPublishTopologyConfigurator publishTopology)
         {
@@ -63,7 +63,7 @@ namespace MassTransit.InMemoryTransport
             return base.Validate().Concat(_specifications.SelectMany(x => x.Validate()));
         }
 
-        protected override IMessageConsumeTopologyConfigurator CreateMessageTopology<T>(Type type)
+        protected override IMessageConsumeTopologyConfigurator CreateMessageTopology<T>()
         {
             var topology = new InMemoryMessageConsumeTopology<T>(_messageTopology.GetMessageTopology<T>(), _publishTopology);
 

@@ -3,14 +3,13 @@
     using System;
     using System.Collections.Generic;
     using System.Linq;
-    using System.Reflection;
 
 
     public class AssemblyTypeList
     {
-        public readonly IList<Type> Abstract = new List<Type>();
-        public readonly IList<Type> Concrete = new List<Type>();
-        public readonly IList<Type> Interface = new List<Type>();
+        public readonly List<Type> Abstract = new List<Type>();
+        public readonly List<Type> Concrete = new List<Type>();
+        public readonly List<Type> Interface = new List<Type>();
 
         public IEnumerable<IList<Type>> SelectTypes(TypeClassification classification)
         {

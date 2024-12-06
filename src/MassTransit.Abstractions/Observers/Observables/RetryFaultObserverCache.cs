@@ -2,7 +2,6 @@
 {
     using System;
     using System.Collections.Concurrent;
-    using System.Threading;
     using System.Threading.Tasks;
 
 
@@ -53,8 +52,7 @@
 
         static class Cached
         {
-            internal static readonly Lazy<RetryFaultObserverCache> Converters =
-                new Lazy<RetryFaultObserverCache>(() => new RetryFaultObserverCache(), LazyThreadSafetyMode.PublicationOnly);
+            internal static readonly Lazy<RetryFaultObserverCache> Converters = new Lazy<RetryFaultObserverCache>(() => new RetryFaultObserverCache());
         }
     }
 }

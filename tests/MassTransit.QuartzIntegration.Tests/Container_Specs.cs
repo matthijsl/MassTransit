@@ -22,9 +22,7 @@ namespace MassTransit.QuartzIntegration.Tests
         public async Task Should_work_properly()
         {
             await using var provider = new ServiceCollection()
-                .AddQuartz(q =>
-                {
-                    q.UseMicrosoftDependencyInjectionJobFactory();
+                .AddQuartz(_ => {
                 })
                 .AddMassTransitTestHarness(x =>
                 {
@@ -54,9 +52,12 @@ namespace MassTransit.QuartzIntegration.Tests
 
             await harness.Bus.Publish<FirstMessage>(new { });
 
-            Assert.That(await harness.GetConsumerHarness<FirstMessageConsumer>().Consumed.Any<FirstMessage>(), Is.True);
+            await Assert.MultipleAsync(async () =>
+            {
+                Assert.That(await harness.GetConsumerHarness<FirstMessageConsumer>().Consumed.Any<FirstMessage>(), Is.True);
 
-            Assert.That(await harness.Consumed.Any<ScheduleMessage>(), Is.True);
+                Assert.That(await harness.Consumed.Any<ScheduleMessage>(), Is.True);
+            });
 
             await adjustment.AdvanceTime(TimeSpan.FromSeconds(10));
 
@@ -67,9 +68,8 @@ namespace MassTransit.QuartzIntegration.Tests
         public async Task Should_work_properly_with_message_headers()
         {
             await using var provider = new ServiceCollection()
-                .AddQuartz(q =>
+                .AddQuartz(_ =>
                 {
-                    q.UseMicrosoftDependencyInjectionJobFactory();
                 })
                 .AddMassTransitTestHarness(x =>
                 {
@@ -99,9 +99,12 @@ namespace MassTransit.QuartzIntegration.Tests
 
             await harness.Bus.Publish<FirstMessage>(new { }, x => x.Headers.Set("SimpleHeader", "SimpleValue"));
 
-            Assert.That(await harness.GetConsumerHarness<FirstMessageConsumer>().Consumed.Any<FirstMessage>(), Is.True);
+            await Assert.MultipleAsync(async () =>
+            {
+                Assert.That(await harness.GetConsumerHarness<FirstMessageConsumer>().Consumed.Any<FirstMessage>(), Is.True);
 
-            Assert.That(await harness.Consumed.Any<ScheduleMessage>(), Is.True);
+                Assert.That(await harness.Consumed.Any<ScheduleMessage>(), Is.True);
+            });
 
             await adjustment.AdvanceTime(TimeSpan.FromSeconds(10));
 
@@ -110,9 +113,12 @@ namespace MassTransit.QuartzIntegration.Tests
             ConsumeContext<SecondMessage> context =
                 (await harness.GetConsumerHarness<SecondMessageConsumer>().Consumed.SelectAsync<SecondMessage>().First()).Context;
 
-            Assert.That(context.Headers.TryGetHeader("SimpleHeader", out var header), Is.True);
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.Headers.TryGetHeader("SimpleHeader", out var header), Is.True);
 
-            Assert.That(header, Is.EqualTo("SimpleValue"));
+                Assert.That(header, Is.EqualTo("SimpleValue"));
+            });
         }
 
         readonly ITestBusConfiguration _configuration;

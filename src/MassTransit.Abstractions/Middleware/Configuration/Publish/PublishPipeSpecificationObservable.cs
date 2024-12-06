@@ -12,5 +12,17 @@ namespace MassTransit.Configuration
         {
             ForEach(observer => observer.MessageSpecificationCreated(specification));
         }
+
+        public void Method4()
+        {
+        }
+
+        public void Method5()
+        {
+        }
+
+        public void Method6()
+        {
+        }
     }
 }

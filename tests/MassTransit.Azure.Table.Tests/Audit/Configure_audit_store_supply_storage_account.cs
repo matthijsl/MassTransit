@@ -5,9 +5,8 @@
     using System.Linq;
     using System.Threading.Tasks;
     using AzureTable;
-    using Microsoft.Azure.Cosmos.Table;
+    using global::Azure.Data.Tables;
     using NUnit.Framework;
-    using Shouldly;
 
 
     [TestFixture]
@@ -17,8 +16,8 @@
         [Test]
         public async Task Should_have_send_audit_records()
         {
-            IEnumerable<AuditRecord> sendRecords = GetRecords<AuditRecord>().Where(x => x.ContextType == "Send");
-            sendRecords.Count().ShouldBe(1);
+            List<AuditRecord> sendRecords = GetRecords<AuditRecord>().Where(x => x.ContextType == "Send").ToList();
+            Assert.That(sendRecords, Has.Count.EqualTo(1));
         }
 
         [OneTimeSetUp]
@@ -29,7 +28,7 @@
 
         protected override void ConfigureInMemoryBus(IInMemoryBusFactoryConfigurator configurator)
         {
-            var storageAccount = CloudStorageAccount.Parse(ConnectionString);
+            var storageAccount = new TableServiceClient(ConnectionString);
             configurator.UseAzureTableAuditStore(storageAccount, TestTableName);
             base.ConfigureInMemoryBus(configurator);
         }

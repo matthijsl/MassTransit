@@ -29,9 +29,12 @@
             Assert.That(last.Name, Is.EqualTo(name));
 
             var wasDisposed = await lastConsumer.Dependency.WasDisposed;
-            Assert.That(wasDisposed, Is.True, "Dependency was not disposed");
+            Assert.Multiple(() =>
+            {
+                Assert.That(wasDisposed, Is.True, "Dependency was not disposed");
 
-            Assert.That(lastConsumer.Dependency.SomethingDone, Is.True, "Dependency was disposed before consumer executed");
+                Assert.That(lastConsumer.Dependency.SomethingDone, Is.True, "Dependency was disposed before consumer executed");
+            });
         }
 
         protected override void ConfigureMassTransit(IBusRegistrationConfigurator configurator)
@@ -71,9 +74,12 @@
             Assert.That(last.Name, Is.EqualTo(name));
 
             var wasDisposed = await lastConsumer.Dependency.WasDisposed;
-            Assert.That(wasDisposed, Is.True, "Dependency was not disposed");
+            Assert.Multiple(() =>
+            {
+                Assert.That(wasDisposed, Is.True, "Dependency was not disposed");
 
-            Assert.That(lastConsumer.Dependency.SomethingDone, Is.True, "Dependency was disposed before consumer executed");
+                Assert.That(lastConsumer.Dependency.SomethingDone, Is.True, "Dependency was disposed before consumer executed");
+            });
 
             var lasterConsumer = await SimplerConsumer.LastConsumer.OrCanceled(InMemoryTestHarness.TestCancellationToken);
             Assert.That(lasterConsumer, Is.Not.Null);
@@ -122,9 +128,12 @@
             Assert.That(last.Name, Is.EqualTo(name));
 
             var wasDisposed = await lastConsumer.Dependency.WasDisposed;
-            Assert.That(wasDisposed, Is.True, "Dependency was not disposed");
+            Assert.Multiple(() =>
+            {
+                Assert.That(wasDisposed, Is.True, "Dependency was not disposed");
 
-            Assert.That(lastConsumer.Dependency.SomethingDone, Is.True, "Dependency was disposed before consumer executed");
+                Assert.That(lastConsumer.Dependency.SomethingDone, Is.True, "Dependency was disposed before consumer executed");
+            });
         }
 
         protected override IServiceCollection ConfigureServices(IServiceCollection collection)
@@ -245,7 +254,7 @@
             await InputQueueSendEndpoint.Send<SimpleMessageInterface>(new { Name = "test" });
 
             var result = await TaskCompletionSource.Task;
-            Assert.IsNotNull(result);
+            Assert.That(result, Is.Not.Null);
         }
 
         protected override IServiceCollection ConfigureServices(IServiceCollection collection)
@@ -837,10 +846,10 @@
             var scope = consumerContext.GetPayload<IServiceScope>();
 
             ConsumerConsumeContext<EasyConsumer, EasyMessage> consumerMessageContext = await _consumerMessageCompletion.Task;
-            Assert.AreEqual(scope, consumerMessageContext.GetPayload<IServiceScope>());
+            Assert.That(consumerMessageContext.GetPayload<IServiceScope>(), Is.EqualTo(scope));
 
             ConsumeContext<EasyMessage> messageContext = await MessageCompletion.Task;
-            Assert.AreEqual(scope, messageContext.GetPayload<IServiceScope>());
+            Assert.That(messageContext.GetPayload<IServiceScope>(), Is.EqualTo(scope));
         }
 
         protected override IServiceCollection ConfigureServices(IServiceCollection collection)

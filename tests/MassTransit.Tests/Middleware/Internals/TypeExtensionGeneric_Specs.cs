@@ -13,25 +13,25 @@ namespace MassTransit.Tests.Middleware.Internals
         [Test]
         public void Should_close_generic_type()
         {
-            Assert.IsTrue(typeof(GenericClass).ClosesType(typeof(IGeneric<>)));
+            Assert.That(typeof(GenericClass).ClosesType(typeof(IGeneric<>)), Is.True);
         }
 
         [Test]
         public void Should_not_close_nested_open_generic_base_class()
         {
-            Assert.IsFalse(typeof(SuperGenericBaseClass<>).ClosesType(typeof(GenericBaseClass<>)));
+            Assert.That(typeof(SuperGenericBaseClass<>).ClosesType(typeof(GenericBaseClass<>)), Is.False);
         }
 
         [Test]
         public void Should_not_close_nested_open_generic_interface_in_base_class()
         {
-            Assert.IsFalse(typeof(SuperGenericBaseClass<>).ClosesType(typeof(IGeneric<>)));
+            Assert.That(typeof(SuperGenericBaseClass<>).ClosesType(typeof(IGeneric<>)), Is.False);
         }
 
         [Test]
         public void Should_not_close_open_generic_type()
         {
-            Assert.IsFalse(typeof(GenericBaseClass<>).ClosesType(typeof(IGeneric<>)));
+            Assert.That(typeof(GenericBaseClass<>).ClosesType(typeof(IGeneric<>)), Is.False);
         }
 
         [Test]
@@ -39,43 +39,55 @@ namespace MassTransit.Tests.Middleware.Internals
         {
             IEnumerable<Type> types = typeof(SuperGenericBaseClass<>).GetClosingArguments(typeof(IGeneric<>));
 
-            Assert.AreEqual(0, types.Count());
+            Assert.That(types.Count(), Is.EqualTo(0));
         }
 
         [Test]
         public void Should_return_the_appropriate_generic_type()
         {
-            IEnumerable<Type> types = typeof(GenericClass).GetClosingArguments(typeof(IGeneric<>));
+            IEnumerable<Type> types = typeof(GenericClass).GetClosingArguments(typeof(IGeneric<>)).ToArray();
 
-            Assert.AreEqual(1, types.Count());
-            Assert.AreEqual(typeof(int), types.First());
+            Assert.Multiple(() =>
+            {
+                Assert.That(types.Count(), Is.EqualTo(1));
+                Assert.That(types.First(), Is.EqualTo(typeof(int)));
+            });
         }
 
         [Test]
         public void Should_return_the_appropriate_generic_type_for_a_subclass_non_generic()
         {
-            IEnumerable<Type> types = typeof(SubClass).GetClosingArguments(typeof(IGeneric<>));
+            IEnumerable<Type> types = typeof(SubClass).GetClosingArguments(typeof(IGeneric<>)).ToArray();
 
-            Assert.AreEqual(1, types.Count());
-            Assert.AreEqual(typeof(int), types.First());
+            Assert.Multiple(() =>
+            {
+                Assert.That(types.Count(), Is.EqualTo(1));
+                Assert.That(types.First(), Is.EqualTo(typeof(int)));
+            });
         }
 
         [Test]
         public void Should_return_the_appropriate_generic_type_with_a_generic_base_class()
         {
-            IEnumerable<Type> types = typeof(NonGenericSubClass).GetClosingArguments(typeof(IGeneric<>));
+            IEnumerable<Type> types = typeof(NonGenericSubClass).GetClosingArguments(typeof(IGeneric<>)).ToArray();
 
-            Assert.AreEqual(1, types.Count());
-            Assert.AreEqual(typeof(int), types.First());
+            Assert.Multiple(() =>
+            {
+                Assert.That(types.Count(), Is.EqualTo(1));
+                Assert.That(types.First(), Is.EqualTo(typeof(int)));
+            });
         }
 
         [Test]
         public void Should_return_the_generic_type_from_a_class()
         {
-            IEnumerable<Type> types = typeof(NonGenericSubClass).GetClosingArguments(typeof(GenericBaseClass<>));
+            IEnumerable<Type> types = typeof(NonGenericSubClass).GetClosingArguments(typeof(GenericBaseClass<>)).ToArray();
 
-            Assert.AreEqual(1, types.Count());
-            Assert.AreEqual(typeof(int), types.First());
+            Assert.Multiple(() =>
+            {
+                Assert.That(types.Count(), Is.EqualTo(1));
+                Assert.That(types.First(), Is.EqualTo(typeof(int)));
+            });
         }
 
 

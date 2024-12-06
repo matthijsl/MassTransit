@@ -19,8 +19,25 @@
             await _machine.RaiseEvent(_instance, _machine.First);
             await _machine.RaiseEvent(_instance, _machine.Second);
 
-            Assert.IsTrue(_instance.Called);
-            Assert.IsEmpty(_machine.NextEvents(_instance.CurrentState));
+            Assert.Multiple(() =>
+            {
+                Assert.That(_instance.Called, Is.True);
+                Assert.That(_machine.NextEvents(_instance.CurrentState), Is.Empty);
+            });
+        }
+
+        [Test]
+        public async Task Should_have_correct_events()
+        {
+            _machine = new TestStateMachine();
+            _instance = new Instance();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_machine.NextEvents(_machine.Initial).Count(), Is.EqualTo(1));
+                Assert.That(_machine.NextEvents(_machine.Waiting).Count(), Is.EqualTo(3));
+                Assert.That(_machine.NextEvents(_machine.Final).Count(), Is.EqualTo(0));
+            });
         }
 
         [Test]
@@ -32,12 +49,15 @@
 
             await _machine.RaiseEvent(_instance, _machine.First);
 
-            Assert.IsFalse(_instance.Called);
+            Assert.That(_instance.Called, Is.False);
 
-            var events = _machine.NextEvents(_instance.CurrentState);
+            Event[] events = _machine.NextEvents(_instance.CurrentState).ToArray();
 
-            Assert.AreEqual(3, events.Count());
-            Assert.AreEqual(2, events.Count(e => !_machine.IsCompositeEvent(e)));
+            Assert.Multiple(() =>
+            {
+                Assert.That(events, Has.Length.EqualTo(3));
+                Assert.That(events.Count(e => !_machine.IsCompositeEvent(e)), Is.EqualTo(2));
+            });
         }
 
         [Test]
@@ -49,21 +69,10 @@
 
             await _machine.RaiseEvent(_instance, _machine.Second);
 
-            Assert.IsFalse(_instance.Called);
-            Assert.AreEqual(3, _machine.NextEvents(_instance.CurrentState).Count());
-        }
-
-        [Test]
-        public async Task Should_have_correct_events()
-        {
-            _machine = new TestStateMachine();
-            _instance = new Instance();
-
             Assert.Multiple(() =>
             {
-                Assert.AreEqual(1, _machine.NextEvents(_machine.Initial).Count());
-                Assert.AreEqual(3, _machine.NextEvents(_machine.Waiting).Count());
-                Assert.AreEqual(0, _machine.NextEvents(_machine.Final).Count());
+                Assert.That(_instance.Called, Is.False);
+                Assert.That(_machine.NextEvents(_instance.CurrentState).Count(), Is.EqualTo(3));
             });
         }
 
@@ -72,12 +81,12 @@
 
 
         class Instance :
-SagaStateMachineInstance
+            SagaStateMachineInstance
         {
-            public Guid CorrelationId { get; set; }
             public CompositeEventStatus CompositeStatus { get; set; }
             public bool Called { get; set; }
             public State CurrentState { get; set; }
+            public Guid CorrelationId { get; set; }
         }
 
 
@@ -96,8 +105,6 @@ SagaStateMachineInstance
                     When(Third)
                         .Then(context => context.Instance.Called = true)
                         .Finalize());
-
-
             }
 
             public State Waiting { get; private set; }
@@ -121,15 +128,35 @@ SagaStateMachineInstance
             _instance = new Instance();
             await _machine.RaiseEvent(_instance, _machine.Start);
 
-            Assert.IsFalse(_instance.Called);
+            Assert.That(_instance.Called, Is.False);
 
             await _machine.RaiseEvent(_instance, _machine.First);
             await _machine.RaiseEvent(_instance, _machine.Second);
 
-            Assert.IsTrue(_instance.Called);
+            Assert.Multiple(() =>
+            {
+                Assert.That(_instance.Called, Is.True);
 
-            Assert.AreEqual(2, _instance.CurrentState);
-            Assert.IsEmpty(_machine.NextEvents(_machine.GetState("Final")));
+                Assert.That(_instance.CurrentState, Is.EqualTo(2));
+                Assert.That(_machine.NextEvents(_machine.GetState("Final")), Is.Empty);
+            });
+        }
+
+        [Test]
+        public async Task Should_have_correct_events()
+        {
+            _machine = new TestStateMachine();
+            _instance = new Instance();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_machine.NextEvents(_machine.Initial).Count(), Is.EqualTo(1));
+                Assert.That(_machine.NextEvents(_machine.GetState("Initial")).Count(), Is.EqualTo(1));
+                Assert.That(_machine.NextEvents(_machine.Waiting).Count(), Is.EqualTo(3));
+                Assert.That(_machine.NextEvents(_machine.GetState("Waiting")).Count(), Is.EqualTo(3));
+                Assert.That(_machine.NextEvents(_machine.Final).Count(), Is.EqualTo(0));
+                Assert.That(_machine.NextEvents(_machine.GetState("Final")).Count(), Is.EqualTo(0));
+            });
         }
 
         [Test]
@@ -139,8 +166,11 @@ SagaStateMachineInstance
             _instance = new Instance();
             await _machine.RaiseEvent(_instance, _machine.Start);
 
-            Assert.AreEqual(3, _instance.CurrentState);
-            Assert.IsEmpty(_machine.NextEvents(_machine.GetState("Final")));
+            Assert.Multiple(() =>
+            {
+                Assert.That(_instance.CurrentState, Is.EqualTo(3));
+                Assert.That(_machine.NextEvents(_machine.GetState("Final")), Is.Empty);
+            });
         }
 
         [Test]
@@ -152,8 +182,11 @@ SagaStateMachineInstance
 
             await _machine.RaiseEvent(_instance, _machine.First);
 
-            Assert.IsFalse(_instance.Called);
-            Assert.IsEmpty(_machine.NextEvents(_machine.GetState("Final")));
+            Assert.Multiple(() =>
+            {
+                Assert.That(_instance.Called, Is.False);
+                Assert.That(_machine.NextEvents(_machine.GetState("Final")), Is.Empty);
+            });
         }
 
         [Test]
@@ -165,24 +198,10 @@ SagaStateMachineInstance
 
             await _machine.RaiseEvent(_instance, _machine.Second);
 
-            Assert.IsFalse(_instance.Called);
-            Assert.IsEmpty(_machine.NextEvents(_machine.GetState("Final")));
-        }
-
-        [Test]
-        public async Task Should_have_correct_events()
-        {
-            _machine = new TestStateMachine();
-            _instance = new Instance();
-
             Assert.Multiple(() =>
             {
-                Assert.AreEqual(1, _machine.NextEvents(_machine.Initial).Count());
-                Assert.AreEqual(1, _machine.NextEvents(_machine.GetState("Initial")).Count());
-                Assert.AreEqual(3, _machine.NextEvents(_machine.Waiting).Count());
-                Assert.AreEqual(3, _machine.NextEvents(_machine.GetState("Waiting")).Count());
-                Assert.AreEqual(0, _machine.NextEvents(_machine.Final).Count());
-                Assert.AreEqual(0, _machine.NextEvents(_machine.GetState("Final")).Count());
+                Assert.That(_instance.Called, Is.False);
+                Assert.That(_machine.NextEvents(_machine.GetState("Final")), Is.Empty);
             });
         }
 
@@ -192,12 +211,12 @@ SagaStateMachineInstance
 
         class Instance : SagaStateMachineInstance
         {
-            public Guid CorrelationId { get; set; }
             public int CompositeStatus { get; set; }
             public bool Called { get; set; }
             public int CurrentState { get; set; }
 
             public bool CalledFirst { get; set; }
+            public Guid CorrelationId { get; set; }
         }
 
 

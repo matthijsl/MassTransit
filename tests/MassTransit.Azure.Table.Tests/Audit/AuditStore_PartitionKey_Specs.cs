@@ -5,9 +5,8 @@
     using System.Linq;
     using System.Threading.Tasks;
     using AzureTable;
-    using Microsoft.Azure.Cosmos.Table;
+    using global::Azure.Data.Tables;
     using NUnit.Framework;
-    using Shouldly;
 
 
     [TestFixture]
@@ -18,11 +17,11 @@
         public async Task Should_Have_Custom_PartitionKey()
         {
             _records = GetTableEntities().ToList();
-            _records.Count.ShouldBe(1);
-            _records[0].PartitionKey.ShouldBe(PartitionKey);
+            Assert.That(_records, Has.Count.EqualTo(1));
+            Assert.That(_records[0].PartitionKey, Is.EqualTo(PartitionKey));
         }
 
-        List<DynamicTableEntity> _records;
+        List<TableEntity> _records;
         readonly string PartitionKey = "TestPartitionKey";
 
         [OneTimeSetUp]

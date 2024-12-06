@@ -2,7 +2,7 @@ namespace MassTransit.RabbitMqTransport.Tests
 {
     using System;
     using NUnit.Framework;
-    using Shouldly;
+    using RabbitMQ.Client;
 
 
     [TestFixture]
@@ -11,31 +11,31 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void Should_have_no_password()
         {
-            _hostSettings.Password.ShouldBe("");
+            Assert.That(_hostSettings.Password, Is.Empty);
         }
 
         [Test]
         public void Should_have_no_username()
         {
-            _hostSettings.Username.ShouldBe("");
+            Assert.That(_hostSettings.Username, Is.Empty);
         }
 
         [Test]
         public void Should_have_the_queue_name()
         {
-            _receiveSettings.QueueName.ShouldBe("queue");
+            Assert.That(_receiveSettings.QueueName, Is.EqualTo("queue"));
         }
 
         [Test]
         public void ShouldNotHaveATtl()
         {
-            _hostSettings.Host.ShouldBe("some_server");
+            Assert.That(_hostSettings.Host, Is.EqualTo("some_server"));
         }
 
         [Test]
         public void TheHost()
         {
-            _hostSettings.VirtualHost.ShouldBe("thehost");
+            Assert.That(_hostSettings.VirtualHost, Is.EqualTo("thehost"));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://some_server/thehost/queue");
@@ -57,7 +57,7 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void Should_have_the_queue_name()
         {
-            _receiveSettings.QueueName.ShouldBe("the_queue");
+            Assert.That(_receiveSettings.QueueName, Is.EqualTo("the_queue"));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://some_server/thehost/the_queue");
@@ -177,7 +177,7 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void Should_have_the_queue_name()
         {
-            _receiveSettings.QueueName.ShouldBe("the.queue");
+            Assert.That(_receiveSettings.QueueName, Is.EqualTo("the.queue"));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://some_server/thehost/the.queue");
@@ -197,7 +197,7 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void Should_have_the_queue_name()
         {
-            _receiveSettings.QueueName.ShouldBe("the:queue");
+            Assert.That(_receiveSettings.QueueName, Is.EqualTo("the:queue"));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://some_server/thehost/the:queue");
@@ -215,14 +215,25 @@ namespace MassTransit.RabbitMqTransport.Tests
     public class Given_a_valid_endpoint_address
     {
         [Test]
+        public void Should_be_valid_for_international_characters()
+        {
+            var hostAddress = new Uri("rabbitmq://localhost/test");
+
+            var address = new RabbitMqEndpointAddress(hostAddress, new Uri("rabbitmq://localhost/test/ßäöüÄÖÜ1234abc"));
+        }
+
+        [Test]
         public void Should_return_a_valid_address_for_a_full_address()
         {
             var hostAddress = new Uri("rabbitmq://localhost/test");
 
             var address = new RabbitMqEndpointAddress(hostAddress, new Uri("rabbitmq://remote-host/production/client/input-queue"));
 
-            Assert.That(address.VirtualHost, Is.EqualTo("production/client"));
-            Assert.That(address.Name, Is.EqualTo("input-queue"));
+            Assert.Multiple(() =>
+            {
+                Assert.That(address.VirtualHost, Is.EqualTo("production/client"));
+                Assert.That(address.Name, Is.EqualTo("input-queue"));
+            });
 
             Uri uri = address;
 
@@ -236,9 +247,12 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             var address = new RabbitMqEndpointAddress(hostAddress, new Uri("rabbitmq://remote-host/input-queue"));
 
-            Assert.That(address.VirtualHost, Is.EqualTo("/"));
-            Assert.That(address.Name, Is.EqualTo("input-queue"));
-            Assert.That(address.Port, Is.EqualTo(5672));
+            Assert.Multiple(() =>
+            {
+                Assert.That(address.VirtualHost, Is.EqualTo("/"));
+                Assert.That(address.Name, Is.EqualTo("input-queue"));
+                Assert.That(address.Port, Is.EqualTo(5672));
+            });
 
             Uri uri = address;
 
@@ -252,8 +266,11 @@ namespace MassTransit.RabbitMqTransport.Tests
 
             var address = new RabbitMqEndpointAddress(hostAddress, new Uri("rabbitmq://remote-host/production%2Fclient/input-queue"));
 
-            Assert.That(address.VirtualHost, Is.EqualTo("production/client"));
-            Assert.That(address.Name, Is.EqualTo("input-queue"));
+            Assert.Multiple(() =>
+            {
+                Assert.That(address.VirtualHost, Is.EqualTo("production/client"));
+                Assert.That(address.Name, Is.EqualTo("input-queue"));
+            });
 
             Uri uri = address;
 
@@ -336,7 +353,7 @@ namespace MassTransit.RabbitMqTransport.Tests
         {
             _receiveSettings = _uri.GetReceiveSettings();
 
-            _receiveSettings.QueueName.ShouldBe("queue");
+            Assert.That(_receiveSettings.QueueName, Is.EqualTo("queue"));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://some_server/thehost/the/queue");
@@ -350,13 +367,13 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void TheHost()
         {
-            _hostSettings.VirtualHost.ShouldBe("/");
+            Assert.That(_hostSettings.VirtualHost, Is.EqualTo("/"));
         }
 
         [Test]
         public void TheQueue()
         {
-            _receiveSettings.QueueName.ShouldBe("the_queue");
+            Assert.That(_receiveSettings.QueueName, Is.EqualTo("the_queue"));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://some_server/the_queue");
@@ -379,13 +396,13 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void TheHost()
         {
-            _hostSettings.VirtualHost.ShouldBe("/");
+            Assert.That(_hostSettings.VirtualHost, Is.EqualTo("/"));
         }
 
         [Test]
         public void ThePort()
         {
-            _hostSettings.Port.ShouldBe(12);
+            Assert.That(_hostSettings.Port, Is.EqualTo(12));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://some_server:12/");
@@ -405,13 +422,13 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void TheHost()
         {
-            _hostSettings.VirtualHost.ShouldBe("/");
+            Assert.That(_hostSettings.VirtualHost, Is.EqualTo("/"));
         }
 
         [Test]
         public void ThePort()
         {
-            _hostSettings.Port.ShouldBe(5672);
+            Assert.That(_hostSettings.Port, Is.EqualTo(5672));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://some_server");
@@ -431,25 +448,25 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void HighAvailabilityQueue()
         {
-            _receiveSettings.QueueArguments["x-message-ttl"].ShouldBe("30000");
+            Assert.That(_receiveSettings.QueueArguments[Headers.XMessageTTL], Is.EqualTo("30000"));
         }
 
         [Test]
         public void ShouldHaveATtl()
         {
-            _receiveSettings.QueueArguments.ContainsKey("x-message-ttl").ShouldBe(true);
+            Assert.That(_receiveSettings.QueueArguments, Contains.Key("x-message-ttl"));
         }
 
         [Test]
         public void TheQueueArguments()
         {
-            _receiveSettings.QueueArguments.ShouldNotBe(null);
+            Assert.That(_receiveSettings.QueueArguments, Is.Not.Null);
         }
 
         [Test]
         public void TheQueueName()
         {
-            _receiveSettings.QueueName.ShouldBe("somequeue");
+            Assert.That(_receiveSettings.QueueName, Is.EqualTo("somequeue"));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://localhost/mttest/somequeue?ttl=30000");
@@ -469,19 +486,19 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void Should_have_the_prefetch_count_on_the_address()
         {
-            _receiveSettings.PrefetchCount.ShouldBe((ushort)32);
+            Assert.That(_receiveSettings.PrefetchCount, Is.EqualTo(32));
         }
 
         [Test]
         public void TheQueueArguments()
         {
-            _receiveSettings.QueueArguments.ShouldBeEmpty();
+            Assert.That(_receiveSettings.QueueArguments, Is.Empty);
         }
 
         [Test]
         public void TheQueueName()
         {
-            _receiveSettings.QueueName.ShouldBe("somequeue");
+            Assert.That(_receiveSettings.QueueName, Is.EqualTo("somequeue"));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://localhost/mttest/somequeue?prefetch=32");
@@ -501,32 +518,32 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void Should_be_auto_delete()
         {
-            _receiveSettings.AutoDelete.ShouldBe(true);
+            Assert.That(_receiveSettings.AutoDelete, Is.True);
         }
 
         [Test]
         public void Should_be_exclusive_to_the_consumer()
         {
-            _receiveSettings.Exclusive.ShouldBe(true);
+            Assert.That(_receiveSettings.Exclusive, Is.True);
         }
 
         [Test]
         public void Should_not_be_durable()
         {
-            _receiveSettings.Durable.ShouldBe(false);
+            Assert.That(_receiveSettings.Durable, Is.False);
         }
 
         [Test]
         public void TheQueueArguments()
         {
-            _receiveSettings.QueueArguments.ShouldBeEmpty();
+            Assert.That(_receiveSettings.QueueArguments, Is.Empty);
         }
 
         [Test]
         public void TheQueueName()
         {
             var guid = new Guid(_receiveSettings.QueueName);
-            Assert.AreNotEqual(Guid.Empty, guid);
+            Assert.That(guid, Is.Not.EqualTo(Guid.Empty));
         }
 
         readonly Uri _uri = new Uri("rabbitmq://localhost/mttest/*?temporary=true");
@@ -546,13 +563,13 @@ namespace MassTransit.RabbitMqTransport.Tests
         [Test]
         public void Should_have_decoded_password()
         {
-            _hostSettings.Password.ShouldBe(ExpectedPassword);
+            Assert.That(_hostSettings.Password, Is.EqualTo(ExpectedPassword));
         }
 
         [Test]
         public void Should_have_decoded_username()
         {
-            _hostSettings.Username.ShouldBe(ExpectedUsername);
+            Assert.That(_hostSettings.Username, Is.EqualTo(ExpectedUsername));
         }
 
         const string EncodedUsername = "te%24t";

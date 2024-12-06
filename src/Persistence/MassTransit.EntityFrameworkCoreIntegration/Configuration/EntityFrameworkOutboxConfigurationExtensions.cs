@@ -88,6 +88,19 @@ namespace MassTransit
         }
 
         /// <summary>
+        /// Configure the outbox for use with SQL Server
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="enableSchemaCaching">Set to false when using multiple DbContexts</param>
+        /// <returns></returns>
+        public static IEntityFrameworkOutboxConfigurator UseSqlServer(this IEntityFrameworkOutboxConfigurator configurator, bool enableSchemaCaching)
+        {
+            configurator.LockStatementProvider = new SqlServerLockStatementProvider(enableSchemaCaching);
+
+            return configurator;
+        }
+
+        /// <summary>
         /// Configure the outbox for use with Postgres
         /// </summary>
         /// <param name="configurator"></param>
@@ -95,6 +108,19 @@ namespace MassTransit
         public static IEntityFrameworkOutboxConfigurator UsePostgres(this IEntityFrameworkOutboxConfigurator configurator)
         {
             configurator.LockStatementProvider = new PostgresLockStatementProvider();
+
+            return configurator;
+        }
+
+        /// <summary>
+        /// Configure the outbox for use with Postgres
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="enableSchemaCaching">Set to false when using multiple DbContexts</param>
+        /// <returns></returns>
+        public static IEntityFrameworkOutboxConfigurator UsePostgres(this IEntityFrameworkOutboxConfigurator configurator, bool enableSchemaCaching)
+        {
+            configurator.LockStatementProvider = new PostgresLockStatementProvider(enableSchemaCaching);
 
             return configurator;
         }
@@ -112,6 +138,19 @@ namespace MassTransit
         }
 
         /// <summary>
+        /// Configure the outbox for use with MySQL
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="enableSchemaCaching">Set to false when using multiple DbContexts</param>
+        /// <returns></returns>
+        public static IEntityFrameworkOutboxConfigurator UseMySql(this IEntityFrameworkOutboxConfigurator configurator, bool enableSchemaCaching)
+        {
+            configurator.LockStatementProvider = new MySqlLockStatementProvider(enableSchemaCaching);
+
+            return configurator;
+        }
+
+        /// <summary>
         /// Configure the outbox for use with SQLite
         /// </summary>
         /// <param name="configurator"></param>
@@ -119,6 +158,19 @@ namespace MassTransit
         public static IEntityFrameworkOutboxConfigurator UseSqlite(this IEntityFrameworkOutboxConfigurator configurator)
         {
             configurator.LockStatementProvider = new SqliteLockStatementProvider();
+
+            return configurator;
+        }
+
+        /// <summary>
+        /// Configure the outbox for use with SQLite
+        /// </summary>
+        /// <param name="configurator"></param>
+        /// <param name="enableSchemaCaching">Set to false when using multiple DbContexts</param>
+        /// <returns></returns>
+        public static IEntityFrameworkOutboxConfigurator UseSqlite(this IEntityFrameworkOutboxConfigurator configurator, bool enableSchemaCaching)
+        {
+            configurator.LockStatementProvider = new SqliteLockStatementProvider(enableSchemaCaching);
 
             return configurator;
         }
@@ -157,6 +209,8 @@ namespace MassTransit
         /// <param name="inbox">The model builder</param>
         public static void ConfigureInboxStateEntity(this EntityTypeBuilder<InboxState> inbox)
         {
+            inbox.OptOutOfEntityFrameworkConventions();
+
             inbox.Property(p => p.Id);
             inbox.HasKey(p => p.Id);
 
@@ -204,6 +258,8 @@ namespace MassTransit
         /// <param name="outbox">The model builder</param>
         public static void ConfigureOutboxStateEntity(this EntityTypeBuilder<OutboxState> outbox)
         {
+            outbox.OptOutOfEntityFrameworkConventions();
+
             outbox.Property(p => p.OutboxId);
             outbox.HasKey(p => p.OutboxId);
 
@@ -238,6 +294,8 @@ namespace MassTransit
         /// <param name="outbox">The model builder</param>
         public static void ConfigureOutboxMessageEntity(this EntityTypeBuilder<OutboxMessage> outbox)
         {
+            outbox.OptOutOfEntityFrameworkConventions();
+
             outbox.Property(p => p.SequenceNumber);
             outbox.HasKey(p => p.SequenceNumber);
 
@@ -269,13 +327,25 @@ namespace MassTransit
                 p.InboxConsumerId,
                 p.SequenceNumber
             }).IsUnique();
+            outbox.HasOne<InboxState>().WithMany().IsRequired(false)
+                .HasForeignKey(p => new
+                {
+                    p.InboxMessageId,
+                    p.InboxConsumerId
+                }).HasPrincipalKey(p => new
+                {
+                    p.MessageId,
+                    p.ConsumerId
+                });
 
-            outbox.Property(p => p.OutboxId);
+            outbox.Property(p => p.OutboxId).IsRequired(false);
             outbox.HasIndex(p => new
             {
                 p.OutboxId,
                 p.SequenceNumber,
             }).IsUnique();
+            outbox.HasOne<OutboxState>().WithMany().IsRequired(false)
+                .HasForeignKey(p => p.OutboxId);
 
             outbox.Property(p => p.Headers);
 
@@ -286,6 +356,19 @@ namespace MassTransit
             outbox.Property(p => p.MessageType);
 
             outbox.Property(p => p.Body);
+        }
+
+        /// <summary>
+        /// Configures the entity type builder to opt out of Entity Framework conventions.
+        /// This method sets the maximum length of all properties to null, effectively removing any length constraints.
+        /// </summary>
+        /// <param name="builder">The EntityTypeBuilder instance to configure.</param>
+        internal static void OptOutOfEntityFrameworkConventions(this EntityTypeBuilder builder)
+        {
+            foreach (var properties in builder.Metadata.GetProperties())
+            {
+                properties.SetMaxLength(null);
+            }
         }
     }
 }

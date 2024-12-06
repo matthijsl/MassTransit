@@ -1,22 +1,15 @@
 ﻿namespace MassTransit.RabbitMqTransport.Tests
 {
-    using System;
-    using System.Threading.Tasks;
-    using NUnit.Framework;
-    using Shouldly;
-
-
     namespace Send_Specs
     {
         using System;
         using System.Linq;
         using System.Threading.Tasks;
-        using MassTransit.Testing;
         using NUnit.Framework;
         using RabbitMQ.Client;
         using Serialization;
-        using Shouldly;
         using TestFramework;
+        using Testing;
 
 
         [TestFixture]
@@ -33,7 +26,7 @@
 
                 ConsumeContext<A> received = await _receivedA;
 
-                Assert.AreEqual(message.Id, received.Message.Id);
+                Assert.That(received.Message.Id, Is.EqualTo(message.Id));
             }
 
             Task<ConsumeContext<A>> _receivedA;
@@ -65,7 +58,7 @@
 
                 ConsumeContext<A> received = await _receivedA;
 
-                Assert.AreEqual(message.Id, received.Message.Id);
+                Assert.That(received.Message.Id, Is.EqualTo(message.Id));
             }
 
             Task<ConsumeContext<A>> _receivedA;
@@ -93,7 +86,7 @@
 
                 ConsumeContext<A> received = await receivedA;
 
-                Assert.AreEqual(message.Id, received.Message.Id);
+                Assert.That(received.Message.Id, Is.EqualTo(message.Id));
             }
         }
 
@@ -112,9 +105,12 @@
 
                 ConsumeContext<A> received = await _receivedA;
 
-                Assert.AreEqual(message.Id, received.Message.Id);
+                Assert.Multiple(() =>
+                {
+                    Assert.That(received.Message.Id, Is.EqualTo(message.Id));
 
-                Assert.AreEqual(EncryptedMessageSerializer.EncryptedContentType, received.ReceiveContext.ContentType);
+                    Assert.That(received.ReceiveContext.ContentType, Is.EqualTo(EncryptedMessageSerializer.EncryptedContentType));
+                });
             }
 
             Task<ConsumeContext<A>> _receivedA;
@@ -149,7 +145,7 @@
 
                 ConsumeContext<A> received = await _receivedA;
 
-                Assert.AreEqual(message.Id, received.Message.Id);
+                Assert.That(received.Message.Id, Is.EqualTo(message.Id));
             }
 
             Task<ConsumeContext<A>> _receivedA;
@@ -176,7 +172,7 @@
 
                 ConsumeContext<A> received = await _receivedA;
 
-                Assert.AreEqual(message.Id, received.Message.Id);
+                Assert.That(received.Message.Id, Is.EqualTo(message.Id));
             }
 
             [Test]
@@ -211,7 +207,7 @@
 
                 ConsumeContext<Fault<A>> received = await _faultA;
 
-                Assert.AreEqual(message.Id, received.Message.Message.Id);
+                Assert.That(received.Message.Message.Id, Is.EqualTo(message.Id));
             }
 
             [Test]
@@ -243,10 +239,12 @@
                 });
             }
 
-            protected override void OnCleanupVirtualHost(IModel model)
+            protected override async Task OnCleanupVirtualHost(IChannel channel)
             {
-                model.ExchangeDelete("handle-fault");
-                model.QueueDelete("handle-fault");
+                await base.OnCleanupVirtualHost(channel);
+
+                await channel.ExchangeDeleteAsync("handle-fault");
+                await channel.QueueDeleteAsync("handle-fault");
             }
         }
 
@@ -305,14 +303,17 @@
 
                 ConsumeContext<A> received = await _receivedA;
 
-                Assert.AreEqual(message.Id, received.Message.Id);
+                Assert.That(received.Message.Id, Is.EqualTo(message.Id));
 
                 ConsumeContext<GotA> consumeContext = await _receivedGotA;
 
-                consumeContext.SourceAddress.ShouldBe(new Uri("rabbitmq://localhost/test/input_queue"));
+                Assert.Multiple(() =>
+                {
+                    Assert.That(consumeContext.SourceAddress, Is.EqualTo(new Uri("rabbitmq://localhost/test/input_queue")));
 
-                Assert.That(consumeContext.ReceiveContext.TransportHeaders.Get(MessageHeaders.MessageId, "N/A"),
-                    Is.EqualTo(consumeContext.MessageId.ToString()));
+                    Assert.That(consumeContext.ReceiveContext.TransportHeaders.Get(MessageHeaders.MessageId, "N/A"),
+                        Is.EqualTo(consumeContext.MessageId.ToString()));
+                });
             }
 
             Task<ConsumeContext<A>> _receivedA;
@@ -337,10 +338,12 @@
                 });
             }
 
-            protected override void OnCleanupVirtualHost(IModel model)
+            protected override async Task OnCleanupVirtualHost(IChannel channel)
             {
-                model.ExchangeDelete("ack_queue");
-                model.QueueDelete("ack_queue");
+                await base.OnCleanupVirtualHost(channel);
+
+                await channel.ExchangeDeleteAsync("ack_queue");
+                await channel.QueueDeleteAsync("ack_queue");
             }
         }
 
@@ -356,11 +359,11 @@
 
                 await Bus.Publish(message);
 
-                _consumer.Received.Select<B>().Any().ShouldBe(true);
+                Assert.That(_consumer.Received.Select<B>(), Is.Not.Empty);
 
                 IReceivedMessage<B> receivedMessage = _consumer.Received.Select<B>().First();
 
-                Assert.AreEqual(message.Id, receivedMessage.Context.Message.Id);
+                Assert.That(receivedMessage.Context.Message.Id, Is.EqualTo(message.Id));
             }
 
             MultiTestConsumer _consumer;
@@ -410,7 +413,7 @@
 
                 await InputQueueSendEndpoint.Send(new B());
 
-                _consumer.Received.Select<B>().Any().ShouldBe(true);
+                Assert.That(_consumer.Received.Select<B>(), Is.Not.Empty);
             }
 
             MultiTestConsumer _consumer;
@@ -455,7 +458,7 @@
 
                 ConsumeContext<A> received = await _receivedA;
 
-                Assert.AreEqual(message.Id, received.Message.Id);
+                Assert.That(received.Message.Id, Is.EqualTo(message.Id));
             }
 
             Task<ConsumeContext<A>> _receivedA;
@@ -464,16 +467,6 @@
             {
                 base.ConfigureRabbitMqReceiveEndpoint(configurator);
                 _receivedA = Handled<A>(configurator);
-            }
-
-            protected override void ConfigureRabbitMqHost(IRabbitMqHostConfigurator configurator)
-            {
-                base.ConfigureRabbitMqHost(configurator);
-
-                configurator.ConfigureBatchPublish(c =>
-                {
-                    c.Enabled = true;
-                });
             }
         }
 
@@ -496,7 +489,7 @@
 
                 ConsumeContext<A> received = await _receivedA;
 
-                Assert.AreEqual(message.Id, received.Message.Id);
+                Assert.That(received.Message.Id, Is.EqualTo(message.Id));
             }
 
             Task<ConsumeContext<A>> _receivedA;
@@ -505,17 +498,6 @@
             {
                 base.ConfigureRabbitMqReceiveEndpoint(configurator);
                 _receivedA = Handled<A>(configurator);
-            }
-
-            protected override void ConfigureRabbitMqHost(IRabbitMqHostConfigurator configurator)
-            {
-                base.ConfigureRabbitMqHost(configurator);
-
-                configurator.ConfigureBatchPublish(c =>
-                {
-                    c.Enabled = true;
-                    c.Timeout = TimeSpan.Zero;
-                });
             }
         }
 

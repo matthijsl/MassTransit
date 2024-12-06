@@ -36,7 +36,19 @@ namespace MassTransit.Middleware
             {
                 await _next.Send(context).ConfigureAwait(false);
 
-                await context.SetConsumed().ConfigureAwait(false);
+                await context.ConsumeCompleted.ConfigureAwait(false);
+
+                try
+                {
+                    await context.SetConsumed().ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    if (!context.ReceiveContext.IsFaulted)
+                        await context.NotifyFaulted(timer.Elapsed, TypeCache<TMessage>.ShortName, exception).ConfigureAwait(false);
+
+                    throw;
+                }
 
                 return;
             }
@@ -100,7 +112,7 @@ namespace MassTransit.Middleware
                         throw new ApplicationException("Simulated Delivery Failure Requested");
 
                     StartedActivity? activity = LogContext.Current?.StartOutboxDeliverActivity(message);
-                    StartedInstrument? instrument = LogContext.Current?.StartOutboxDeliveryInstrument(message);
+                    StartedInstrument? instrument = LogContext.Current?.StartOutboxDeliveryInstrument(context, message);
                     try
                     {
                         await endpoint.Send(new SerializedMessageBody(), pipe, token.Token).ConfigureAwait(false);

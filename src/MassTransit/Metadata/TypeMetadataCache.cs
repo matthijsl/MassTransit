@@ -3,7 +3,6 @@
     using System;
     using System.Collections.Generic;
     using System.Reflection;
-    using System.Threading;
     using Internals;
 
 
@@ -38,16 +37,6 @@
             return MessageTypeCache.IsTemporaryMessageType(type);
         }
 
-        public static bool HasConsumerInterfaces(Type type)
-        {
-            return MessageTypeCache.HasConsumerInterfaces(type);
-        }
-
-        public static bool HasSagaInterfaces(Type type)
-        {
-            return MessageTypeCache.HasSagaInterfaces(type);
-        }
-
         public static Type[] GetMessageTypes(Type type)
         {
             return MessageTypeCache.GetMessageTypes(type);
@@ -58,16 +47,15 @@
             return MessageTypeCache.GetMessageTypeNames(type);
         }
 
+        public static bool IsValidMessageDataType(Type type)
+        {
+            return type.IsInterfaceOrConcreteClass() && MessageTypeCache.IsValidMessageType(type) && !type.IsValueTypeOrObject();
+        }
+
 
         static class Cached
         {
             internal static readonly IImplementationBuilder Builder = new DynamicImplementationBuilder();
-        }
-
-
-        public static bool IsValidMessageDataType(Type type)
-        {
-            return type.IsInterfaceOrConcreteClass() && MessageTypeCache.IsValidMessageType(type) && !type.IsValueTypeOrObject();
         }
     }
 
@@ -86,8 +74,6 @@
 
         public static string ShortName => TypeCache<T>.ShortName;
         public static string DiagnosticAddress => MessageTypeCache<T>.DiagnosticAddress;
-        public static bool HasSagaInterfaces => MessageTypeCache<T>.HasSagaInterfaces;
-        public static bool HasConsumerInterfaces => MessageTypeCache<T>.HasConsumerInterfaces;
         public static IEnumerable<PropertyInfo> Properties => MessageTypeCache<T>.Properties;
         public static bool IsValidMessageType => MessageTypeCache<T>.IsValidMessageType;
         public static string InvalidMessageTypeReason => MessageTypeCache<T>.InvalidMessageTypeReason;
@@ -100,8 +86,7 @@
 
         static class Cached
         {
-            internal static readonly Lazy<ITypeMetadataCache<T>> Metadata = new Lazy<ITypeMetadataCache<T>>(
-                () => new TypeMetadataCache<T>(), LazyThreadSafetyMode.PublicationOnly);
+            internal static readonly Lazy<ITypeMetadataCache<T>> Metadata = new Lazy<ITypeMetadataCache<T>>(() => new TypeMetadataCache<T>());
         }
     }
 }

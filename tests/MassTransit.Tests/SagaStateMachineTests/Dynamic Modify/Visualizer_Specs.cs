@@ -1,9 +1,9 @@
 ﻿namespace MassTransit.Tests.SagaStateMachineTests.Dynamic_Modify
 {
     using System;
-    using Visualizer;
     using NUnit.Framework;
     using SagaStateMachine;
+    using Visualizer;
 
 
     [TestFixture(Category = "Dynamic Modify")]
@@ -12,21 +12,35 @@
         [Test]
         public void Should_parse_the_graph()
         {
-            Assert.IsNotNull(_graph);
+            Assert.That(_graph, Is.Not.Null);
         }
 
         [Test]
-        public void Should_show_the_goods()
+        public void Should_show_graphviz_output()
         {
             var generator = new StateMachineGraphvizGenerator(_graph);
 
-            string dots = generator.CreateDotFile();
+            string output = generator.CreateDotFile();
 
-            Console.WriteLine(dots);
+            Console.WriteLine(output);
 
-            var expected = Expected.Replace("\r", "").Replace("\n", Environment.NewLine);
+            var expected = ExpectedGraphvizFile.Replace("\r", "").Replace("\n", Environment.NewLine);
 
-            Assert.AreEqual(expected, dots);
+            Assert.That(output, Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void Should_show_mermaid_output()
+        {
+            var generator = new StateMachineMermaidGenerator(_graph);
+
+            string output = generator.CreateMermaidFile();
+
+            Console.WriteLine(output);
+
+            var expected = ExpectedMermaidFile.Replace("\r", "").Replace("\n", Environment.NewLine);
+
+            Assert.That(output, Is.EqualTo(expected));
         }
 
         StateMachine<Instance> _machine;
@@ -46,24 +60,24 @@
                     .Event("Finished", out Event Finished)
                     .Event<RestartData>("Restart", out Event<RestartData> Restart)
                     .During(b.Initial)
-                        .When(Initialized, (binder) => binder
-                            .TransitionTo(Running)
-                            .Catch<Exception>(h => h.TransitionTo(Failed))
-                        )
+                    .When(Initialized, (binder) => binder
+                        .TransitionTo(Running)
+                        .Catch<Exception>(h => h.TransitionTo(Failed))
+                    )
                     .During(Running)
-                        .When(Finished, (binder) => binder.TransitionTo(b.Final))
-                        .When(Suspend, (binder) => binder.TransitionTo(Suspended))
-                        .Ignore(Resume)
+                    .When(Finished, (binder) => binder.TransitionTo(b.Final))
+                    .When(Suspend, (binder) => binder.TransitionTo(Suspended))
+                    .Ignore(Resume)
                     .During(Suspended)
-                        .When(Resume, b => b.TransitionTo(Running))
+                    .When(Resume, b => b.TransitionTo(Running))
                     .During(Failed)
-                        .When(Restart, context => context.Data.Name != null, b => b.TransitionTo(Running))
+                    .When(Restart, context => context.Data.Name != null, b => b.TransitionTo(Running))
                 );
 
             _graph = _machine.GetGraph();
         }
 
-        const string Expected = @"digraph G {
+        const string ExpectedGraphvizFile = @"digraph G {
 0 [shape=ellipse, label=""Initial""];
 1 [shape=ellipse, label=""Running""];
 2 [shape=ellipse, label=""Failed""];
@@ -89,12 +103,26 @@
 10 -> 1;
 }";
 
+        const string ExpectedMermaidFile = @"flowchart TB;
+    0([""Initial""]) --> 5[""Initialized""];
+    1([""Running""]) --> 7[""Finished""];
+    1([""Running""]) --> 8[""Suspend""];
+    2([""Failed""]) --> 10[""Restart«RestartData»""];
+    4([""Suspended""]) --> 9[""Resume""];
+    5[""Initialized""] --> 1([""Running""]);
+    5[""Initialized""] --> 6[""Exception""];
+    6[""Exception""] --> 2([""Failed""]);
+    7[""Finished""] --> 3([""Final""]);
+    8[""Suspend""] --> 4([""Suspended""]);
+    9[""Resume""] --> 1([""Running""]);
+    10[""Restart«RestartData»""] --> 1([""Running""]);";
+
 
         class Instance :
-SagaStateMachineInstance
+            SagaStateMachineInstance
         {
-            public Guid CorrelationId { get; set; }
             public State CurrentState { get; set; }
+            public Guid CorrelationId { get; set; }
         }
 
 

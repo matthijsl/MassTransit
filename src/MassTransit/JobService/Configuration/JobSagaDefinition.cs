@@ -22,7 +22,9 @@ namespace MassTransit.Configuration
         protected override void ConfigureSaga(IReceiveEndpointConfigurator configurator, ISagaConfigurator<JobSaga> sagaConfigurator,
             IRegistrationContext context)
         {
-            configurator.UseMessageRetry(r => r.Intervals(100, 1000, 2000, 5000));
+            configurator.UseMessageRetry(r => r.Intervals(100, 500, 1000, 1000, 2000, 2000, 5000, 5000));
+
+            configurator.UseMessageScope(context);
 
             configurator.UseInMemoryOutbox(context);
 
@@ -38,7 +40,6 @@ namespace MassTransit.Configuration
                 configurator.UsePartitioner<JobSlotUnavailable>(partition, p => p.Message.JobId);
                 configurator.UsePartitioner<Fault<AllocateJobSlot>>(partition, p => p.Message.Message.JobId);
 
-                configurator.UsePartitioner<JobAttemptCreated>(partition, p => p.Message.JobId);
                 configurator.UsePartitioner<Fault<StartJobAttempt>>(partition, p => p.Message.Message.JobId);
 
                 configurator.UsePartitioner<JobAttemptCanceled>(partition, p => p.Message.JobId);
@@ -46,8 +47,15 @@ namespace MassTransit.Configuration
                 configurator.UsePartitioner<JobAttemptFaulted>(partition, p => p.Message.JobId);
                 configurator.UsePartitioner<JobAttemptStarted>(partition, p => p.Message.JobId);
 
+                configurator.UsePartitioner<GetJobState>(partition, p => p.Message.JobId);
+
                 configurator.UsePartitioner<JobCompleted>(partition, p => p.Message.JobId);
                 configurator.UsePartitioner<CancelJob>(partition, p => p.Message.JobId);
+                configurator.UsePartitioner<RetryJob>(partition, p => p.Message.JobId);
+                configurator.UsePartitioner<RunJob>(partition, p => p.Message.JobId);
+
+                configurator.UsePartitioner<SetJobProgress>(partition, p => p.Message.JobId);
+                configurator.UsePartitioner<SaveJobState>(partition, p => p.Message.JobId);
 
                 configurator.UsePartitioner<JobSlotWaitElapsed>(partition, p => p.Message.JobId);
                 configurator.UsePartitioner<JobRetryDelayElapsed>(partition, p => p.Message.JobId);

@@ -13,10 +13,10 @@
         public class ConsumerBindingTestFixture :
             RabbitMqTestFixture
         {
-            protected override void OnCleanupVirtualHost(IModel model)
+            protected override async Task OnCleanupVirtualHost(IChannel channel)
             {
-                model.ExchangeDelete(NameFormatter.GetMessageName(typeof(A)).ToString());
-                model.ExchangeDelete(NameFormatter.GetMessageName(typeof(B)).ToString());
+                await channel.ExchangeDeleteAsync(NameFormatter.GetMessageName(typeof(A)));
+                await channel.ExchangeDeleteAsync(NameFormatter.GetMessageName(typeof(B)));
             }
         }
 
@@ -171,7 +171,7 @@
             public async Task Should_receive_the_message_a()
             {
                 Guid? sagaId = await SagaRepository.ShouldContainSaga(_sagaId, TestTimeout);
-                Assert.IsTrue(sagaId.HasValue);
+                Assert.That(sagaId.HasValue, Is.True);
 
                 var saga = _repository[sagaId.Value].Instance;
 
@@ -182,7 +182,7 @@
             public async Task Should_receive_the_message_b()
             {
                 Guid? sagaId = await SagaRepository.ShouldContainSaga(_sagaId, TestTimeout);
-                Assert.IsTrue(sagaId.HasValue);
+                Assert.That(sagaId.HasValue, Is.True);
 
                 var saga = _repository[sagaId.Value].Instance;
 

@@ -7,6 +7,7 @@ namespace MassTransit.SqlTransport.PostgreSql
     using System.Threading;
     using System.Threading.Tasks;
     using Dapper;
+    using Npgsql;
     using Serialization;
     using Topology;
 
@@ -30,6 +31,7 @@ namespace MassTransit.SqlTransport.PostgreSql
         readonly string _receiveSql;
         readonly string _renewLockSql;
         readonly string _sendSql;
+        readonly string _touchQueueSql;
         readonly string _unlockSql;
 
         public PostgresClientContext(PostgresDbConnectionContext context, CancellationToken cancellationToken)
@@ -52,6 +54,7 @@ namespace MassTransit.SqlTransport.PostgreSql
             _deleteScheduledMessageSql = string.Format(SqlStatements.DbDeleteScheduledMessageSql, _context.Schema);
             _moveMessageTypeSql = string.Format(SqlStatements.DbMoveMessageSql, _context.Schema);
             _renewLockSql = string.Format(SqlStatements.DbRenewLockSql, _context.Schema);
+            _touchQueueSql = string.Format(SqlStatements.DbTouchQueueSql, _context.Schema);
             _unlockSql = string.Format(SqlStatements.DbUnlockSql, _context.Schema);
         }
 
@@ -98,21 +101,50 @@ namespace MassTransit.SqlTransport.PostgreSql
             return _context.Query((x, t) => x.ExecuteScalarAsync<long>(_purgeQueueSql, new { queue_name = queueName }), CancellationToken);
         }
 
-        public override Task<IEnumerable<SqlTransportMessage>> ReceiveMessages(string queueName, SqlReceiveMode mode, int messageLimit, TimeSpan lockDuration)
+        public override async Task<IEnumerable<SqlTransportMessage>> ReceiveMessages(string queueName, SqlReceiveMode mode, int messageLimit,
+            int concurrentLimit, TimeSpan lockDuration)
         {
-            var sql = mode switch
+            try
             {
-                SqlReceiveMode.Normal => _receiveSql,
-                _ => _receivePartitionedSql
-            };
-            return _context.Query((x, t) => x.QueryAsync<SqlTransportMessage>(sql, new
+                if (mode == SqlReceiveMode.Normal)
+                {
+                    return await _context.Query((x, t) => x.QueryAsync<SqlTransportMessage>(_receiveSql, new
+                    {
+                        queue_name = queueName,
+                        fetch_consumer_id = _consumerId,
+                        fetch_lock_id = NewId.NextGuid(),
+                        lock_duration = lockDuration,
+                        fetch_count = messageLimit
+                    }), CancellationToken).ConfigureAwait(false);
+                }
+
+                var ordered = mode switch
+                {
+                    SqlReceiveMode.PartitionedOrdered => 1,
+                    SqlReceiveMode.PartitionedOrderedConcurrent => 1,
+                    _ => 0
+                };
+
+                return await _context.Query((x, t) => x.QueryAsync<SqlTransportMessage>(_receivePartitionedSql, new
+                {
+                    queue_name = queueName,
+                    fetch_consumer_id = _consumerId,
+                    fetch_lock_id = NewId.NextGuid(),
+                    lock_duration = lockDuration,
+                    fetch_count = messageLimit,
+                    concurrent_count = concurrentLimit,
+                    ordered
+                }), CancellationToken).ConfigureAwait(false);
+            }
+            catch (PostgresException exception) when (exception.ErrorCode == 40001)
             {
-                queue_name = queueName,
-                fetch_consumer_id = _consumerId,
-                fetch_lock_id = NewId.NextGuid(),
-                lock_duration = lockDuration,
-                fetch_count = messageLimit
-            }), CancellationToken);
+                return Array.Empty<SqlTransportMessage>();
+            }
+        }
+
+        public override Task TouchQueue(string queueName)
+        {
+            return _context.Query((x, t) => x.QueryAsync<SqlTransportMessage>(_touchQueueSql, new { queue_name = queueName }), CancellationToken);
         }
 
         public override Task Send<T>(string queueName, SqlMessageSendContext<T> context)
@@ -120,9 +152,9 @@ namespace MassTransit.SqlTransport.PostgreSql
             IEnumerable<KeyValuePair<string, object>> headers = context.Headers.GetAll().ToList();
             var headersAsJson = headers.Any() ? JsonSerializer.Serialize(headers, SystemTextJsonMessageSerializer.Options) : null;
 
-            context.Headers.TryGetHeader(MessageHeaders.SchedulingTokenId, out var schedulingTokenId);
+            Guid? schedulingTokenId = context.Headers.Get<Guid>(MessageHeaders.SchedulingTokenId);
 
-            return _context.Query((x, t) => x.QuerySingleAsync<MessageDelivery>(_sendSql, new
+            return _context.Query((x, t) => x.ExecuteScalarAsync<long?>(_sendSql, new
             {
                 entity_name = queueName,
                 priority = (int)(context.Priority ?? 100),
@@ -150,14 +182,14 @@ namespace MassTransit.SqlTransport.PostgreSql
             }), CancellationToken);
         }
 
-        public override Task<IEnumerable<MessageDelivery>> Publish<T>(string topicName, SqlMessageSendContext<T> context)
+        public override Task Publish<T>(string topicName, SqlMessageSendContext<T> context)
         {
             IEnumerable<KeyValuePair<string, object>> headers = context.Headers.GetAll().ToList();
             var headersAsJson = headers.Any() ? JsonSerializer.Serialize(headers, SystemTextJsonMessageSerializer.Options) : null;
 
-            context.Headers.TryGetHeader(MessageHeaders.SchedulingTokenId, out var schedulingTokenId);
+            Guid? schedulingTokenId = context.Headers.Get<Guid>(MessageHeaders.SchedulingTokenId);
 
-            return _context.Query((x, t) => x.QueryAsync<MessageDelivery>(_publishSql, new
+            return _context.Query((x, t) => x.ExecuteScalarAsync<long?>(_publishSql, new
             {
                 entity_name = topicName,
                 priority = (int)(context.Priority ?? 100),
@@ -196,12 +228,12 @@ namespace MassTransit.SqlTransport.PostgreSql
             return result == messageDeliveryId;
         }
 
-        public override async Task<bool> DeleteScheduledMessage(Guid tokenId)
+        public override async Task<bool> DeleteScheduledMessage(Guid tokenId, CancellationToken cancellationToken)
         {
             IEnumerable<SqlTransportMessage>? result = await _context.Query((x, t) => x.QueryAsync<SqlTransportMessage>(_deleteScheduledMessageSql, new
             {
                 token_id = tokenId,
-            }), CancellationToken);
+            }), cancellationToken);
 
             return result.Any();
         }

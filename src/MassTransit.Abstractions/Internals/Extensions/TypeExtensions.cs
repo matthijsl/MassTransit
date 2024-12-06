@@ -34,7 +34,7 @@ namespace MassTransit.Internals
                     yield return prop;
             }
 
-            var specialGetPropertyNames = typeInfo.DeclaredMethods
+            IEnumerable<string>? specialGetPropertyNames = typeInfo.DeclaredMethods
                 .Where(x => x.IsSpecialName && x.Name.StartsWith("get_") && !x.IsStatic)
                 .Select(x => x.Name.Substring("get_".Length)).Distinct();
 
@@ -45,7 +45,9 @@ namespace MassTransit.Internals
             if (typeInfo.IsInterface)
             {
                 IEnumerable<PropertyInfo> sourceProperties = properties
-                    .Concat(typeInfo.ImplementedInterfaces.SelectMany(x => x.GetTypeInfo().DeclaredProperties));
+                    .Concat(typeInfo.ImplementedInterfaces.SelectMany(x => x.GetProperties(BindingFlags.DeclaredOnly | BindingFlags.Instance |
+                        BindingFlags.Static | BindingFlags.Public |
+                        BindingFlags.NonPublic)));
 
                 foreach (var prop in sourceProperties)
                     yield return prop;
@@ -76,23 +78,22 @@ namespace MassTransit.Internals
                     yield return prop;
             }
 
-            IEnumerable<PropertyInfo> props = info.DeclaredMethods
+            IEnumerable<PropertyInfo?> props = info.DeclaredMethods
                 .Where(x => x.IsSpecialName && x.Name.StartsWith("get_") && x.IsStatic)
-                .Select(x => info.GetDeclaredProperty(x.Name.Substring("get_".Length)))
-                .Cast<PropertyInfo>();
+                .Select(x => info.GetDeclaredProperty(x.Name.Substring("get_".Length)));
 
             foreach (var propertyInfo in props)
-                yield return propertyInfo;
+                if (propertyInfo != null)
+                    yield return propertyInfo;
         }
 
-        public static IEnumerable<PropertyInfo> GetStaticProperties(this Type type)
+        public static IEnumerable<PropertyInfo?> GetStaticProperties(this Type type)
         {
             var info = type.GetTypeInfo();
 
             return info.DeclaredMethods
                 .Where(x => x.IsSpecialName && x.Name.StartsWith("get_") && x.IsStatic)
-                .Select(x => info.GetDeclaredProperty(x.Name.Substring("get_".Length)))
-                .Cast<PropertyInfo>();
+                .Select(x => info.GetDeclaredProperty(x.Name.Substring("get_".Length)));
         }
 
         /// <summary>
@@ -102,7 +103,7 @@ namespace MassTransit.Internals
         /// <returns>True if the type can be constructed, otherwise false.</returns>
         public static bool IsConcrete(this Type type)
         {
-            return type is {IsAbstract: false, IsInterface: false};
+            return type is { IsAbstract: false, IsInterface: false };
         }
 
         public static bool IsInterfaceOrConcreteClass(this Type type)
@@ -110,7 +111,7 @@ namespace MassTransit.Internals
             if (type.IsInterface)
                 return true;
 
-            return type is {IsClass: true, IsAbstract: false};
+            return type is { IsClass: true, IsAbstract: false };
         }
 
         /// <summary>
@@ -174,7 +175,7 @@ namespace MassTransit.Internals
         {
             return !type.IsValueType
                 || type == typeof(string)
-                || type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>);
+                || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>));
         }
 
         /// <summary>

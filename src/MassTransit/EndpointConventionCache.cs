@@ -3,7 +3,6 @@ namespace MassTransit
     using System;
     using System.Collections.Concurrent;
     using System.Linq;
-    using System.Threading;
 
 
     public static class EndpointConventionCache
@@ -154,7 +153,7 @@ namespace MassTransit
         static class Cached
         {
             internal static Lazy<IEndpointConventionCache<TMessage>> Metadata = new Lazy<IEndpointConventionCache<TMessage>>(
-                () => new EndpointConventionCache<TMessage>(), LazyThreadSafetyMode.PublicationOnly);
+                () => new EndpointConventionCache<TMessage>());
         }
     }
 }

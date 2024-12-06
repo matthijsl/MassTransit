@@ -3,6 +3,7 @@
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using Metadata;
     using Util;
 
 
@@ -16,7 +17,7 @@
         {
             try
             {
-                if (!MessageTypeCache<TSaga>.HasSagaInterfaces)
+                if (!RegistrationMetadata.IsSaga(typeof(TSaga)))
                     throw new ConfigurationException("The specified type is does not support any saga methods: " + TypeCache<TSaga>.ShortName);
 
                 _connectors = Initiates()

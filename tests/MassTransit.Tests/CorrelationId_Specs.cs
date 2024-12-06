@@ -19,11 +19,16 @@
 
             ConsumeContext<PingMessage> context = await _handled;
 
-            Assert.That(context.CorrelationId.HasValue, Is.True);
-            Assert.That(context.CorrelationId.Value, Is.EqualTo(pingMessage.CorrelationId));
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.CorrelationId.HasValue, Is.True);
+                Assert.That(context.CorrelationId.Value, Is.EqualTo(pingMessage.CorrelationId));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<PingMessage>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
@@ -45,11 +50,16 @@
 
             ConsumeContext<PingMessage> context = await _handled;
 
-            Assert.That(context.CorrelationId.HasValue, Is.True);
-            Assert.That(context.CorrelationId.Value, Is.EqualTo(pingMessage.CorrelationId));
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.CorrelationId.HasValue, Is.True);
+                Assert.That(context.CorrelationId.Value, Is.EqualTo(pingMessage.CorrelationId));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<PingMessage>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
@@ -71,11 +81,16 @@
 
             ConsumeContext<A> context = await _handled;
 
-            Assert.That(context.CorrelationId.HasValue, Is.True);
-            Assert.That(context.CorrelationId.Value, Is.EqualTo(message.CorrelationId));
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.CorrelationId.HasValue, Is.True);
+                Assert.That(context.CorrelationId.Value, Is.EqualTo(message.CorrelationId));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<A>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
@@ -103,11 +118,16 @@
 
             ConsumeContext<A> context = await _handled;
 
-            Assert.That(context.CorrelationId.HasValue, Is.True);
-            Assert.That(context.CorrelationId.Value, Is.EqualTo(message.CommandId));
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.CorrelationId.HasValue, Is.True);
+                Assert.That(context.CorrelationId.Value, Is.EqualTo(message.CommandId));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<A>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
@@ -135,11 +155,16 @@
 
             ConsumeContext<A> context = await _handled;
 
-            Assert.That(context.CorrelationId.HasValue, Is.True);
-            Assert.That(context.CorrelationId.Value, Is.EqualTo(message.EventId));
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.CorrelationId.HasValue, Is.True);
+                Assert.That(context.CorrelationId.Value, Is.EqualTo(message.EventId));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<A>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
@@ -168,11 +193,16 @@
 
             ConsumeContext<A> context = await _handled;
 
-            Assert.That(context.CorrelationId.HasValue, Is.True);
-            Assert.That(context.CorrelationId.Value, Is.EqualTo(message.CorrelationId.Value));
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.CorrelationId.HasValue, Is.True);
+                Assert.That(context.CorrelationId.Value, Is.EqualTo(message.CorrelationId.Value));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<A>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
@@ -200,11 +230,16 @@
 
             ConsumeContext<A> context = await _handled;
 
-            Assert.That(context.CorrelationId.HasValue, Is.True);
-            Assert.That(context.CorrelationId.Value, Is.EqualTo(message.CorrelationId.Value));
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.CorrelationId.HasValue, Is.True);
+                Assert.That(context.CorrelationId.Value, Is.EqualTo(message.CorrelationId.Value));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<A>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {

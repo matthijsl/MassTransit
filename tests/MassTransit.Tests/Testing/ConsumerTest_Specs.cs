@@ -51,6 +51,7 @@ namespace MassTransit.Tests.Testing
         public async Task Teardown()
         {
             await _harness.Stop();
+            _harness.Dispose();
         }
 
 
@@ -120,6 +121,7 @@ namespace MassTransit.Tests.Testing
         public async Task Teardown()
         {
             await _harness.Stop();
+            _harness.Dispose();
         }
 
 
@@ -157,8 +159,11 @@ namespace MassTransit.Tests.Testing
         [Test]
         public void Should_have_sent_the_response_from_the_consumer()
         {
-            Assert.That(_harness.Published.Select<B>().Any(), Is.True);
-            Assert.That(_harness.Published.Select<IB>().Any(), Is.True);
+            Assert.Multiple(() =>
+            {
+                Assert.That(_harness.Published.Select<B>().Any(), Is.True);
+                Assert.That(_harness.Published.Select<IB>().Any(), Is.True);
+            });
         }
 
         [Test]
@@ -170,8 +175,11 @@ namespace MassTransit.Tests.Testing
         [Test]
         public void Should_send_the_initial_message_to_the_consumer()
         {
-            Assert.That(_harness.Sent.Select<A>().Any(), Is.True);
-            Assert.That(_harness.Sent.Select<IA>().Any(), Is.True);
+            Assert.Multiple(() =>
+            {
+                Assert.That(_harness.Sent.Select<A>().Any(), Is.True);
+                Assert.That(_harness.Sent.Select<IA>().Any(), Is.True);
+            });
         }
 
         InMemoryTestHarness _harness;
@@ -192,6 +200,7 @@ namespace MassTransit.Tests.Testing
         public async Task Teardown()
         {
             await _harness.Stop();
+            _harness.Dispose();
         }
 
 
@@ -248,6 +257,7 @@ namespace MassTransit.Tests.Testing
         public async Task Teardown()
         {
             await _harness.Stop();
+            _harness.Dispose();
         }
 
         [Test]

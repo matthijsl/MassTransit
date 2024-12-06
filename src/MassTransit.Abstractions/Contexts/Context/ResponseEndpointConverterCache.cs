@@ -2,7 +2,6 @@ namespace MassTransit.Context
 {
     using System;
     using System.Collections.Concurrent;
-    using System.Threading;
     using System.Threading.Tasks;
 
 
@@ -93,7 +92,7 @@ namespace MassTransit.Context
         static class Cached
         {
             internal static readonly Lazy<ResponseEndpointConverterCache> Converters =
-                new Lazy<ResponseEndpointConverterCache>(() => new ResponseEndpointConverterCache(), LazyThreadSafetyMode.PublicationOnly);
+                new Lazy<ResponseEndpointConverterCache>(() => new ResponseEndpointConverterCache());
         }
     }
 }

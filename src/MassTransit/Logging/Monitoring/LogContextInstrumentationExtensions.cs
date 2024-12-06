@@ -5,7 +5,6 @@ namespace MassTransit.Logging
     using System.Diagnostics;
     using System.Diagnostics.Metrics;
     using System.Linq;
-    using System.Reflection;
     using System.Text;
     using Courier.Contracts;
     using Metadata;
@@ -70,6 +69,8 @@ namespace MassTransit.Logging
                 { _options.EndpointLabel, GetEndpointLabel(context.InputAddress) }
             };
 
+            AddCustomTags(ref tagList, context);
+
             _receiveTotal.Add(1, tagList);
             _receiveInProgress.Add(1, tagList);
 
@@ -95,9 +96,12 @@ namespace MassTransit.Logging
             var tagList = new TagList
             {
                 { _options.ServiceNameLabel, _options.ServiceName },
+                { _options.EndpointLabel, GetEndpointLabel(context.ReceiveContext.InputAddress) },
                 { _options.MessageTypeLabel, messageTypeLabel },
                 { _options.ConsumerTypeLabel, GetConsumerTypeLabel<MessageHandler<TMessage>, TMessage>(messageTypeLabel) }
             };
+
+            AddCustomTags(ref tagList, context);
 
             _handlerTotal.Add(1, tagList);
             _handlerInProgress.Add(1, tagList);
@@ -124,9 +128,12 @@ namespace MassTransit.Logging
             var tagList = new TagList
             {
                 { _options.ServiceNameLabel, _options.ServiceName },
+                { _options.EndpointLabel, GetEndpointLabel(context.ReceiveContext.InputAddress) },
                 { _options.MessageTypeLabel, messageTypeLabel },
                 { _options.ConsumerTypeLabel, GetConsumerTypeLabel<TSaga, T>(messageTypeLabel) }
             };
+
+            AddCustomTags(ref tagList, context);
 
             _sagaTotal.Add(1, tagList);
             _sagaInProgress.Add(1, tagList);
@@ -144,7 +151,7 @@ namespace MassTransit.Logging
 
         public static StartedInstrument? StartSagaStateMachineInstrument<TSaga, T>(this ILogContext logContext, BehaviorContext<TSaga, T> context)
             where T : class
-            where TSaga : class, ISaga
+            where TSaga : class, SagaStateMachineInstance
         {
             if (!_isConfigured || !_sagaTotal.Enabled)
                 return null;
@@ -153,9 +160,12 @@ namespace MassTransit.Logging
             var tagList = new TagList
             {
                 { _options.ServiceNameLabel, _options.ServiceName },
+                { _options.EndpointLabel, GetEndpointLabel(context.ReceiveContext.InputAddress) },
                 { _options.MessageTypeLabel, messageTypeLabel },
                 { _options.ConsumerTypeLabel, GetConsumerTypeLabel<TSaga, T>(messageTypeLabel) }
             };
+
+            AddCustomTags(ref tagList, context);
 
             _sagaTotal.Add(1, tagList);
             _sagaInProgress.Add(1, tagList);
@@ -181,9 +191,12 @@ namespace MassTransit.Logging
             var tagList = new TagList
             {
                 { _options.ServiceNameLabel, _options.ServiceName },
+                { _options.EndpointLabel, GetEndpointLabel(context.ReceiveContext.InputAddress) },
                 { _options.MessageTypeLabel, messageTypeLabel },
                 { _options.ConsumerTypeLabel, GetConsumerTypeLabel<TConsumer, T>(messageTypeLabel) }
             };
+
+            AddCustomTags(ref tagList, context);
 
             _consumeTotal.Add(1, tagList);
             _consumerInProgress.Add(1, tagList);
@@ -223,9 +236,12 @@ namespace MassTransit.Logging
             var tagList = new TagList
             {
                 { _options.ServiceNameLabel, _options.ServiceName },
+                { _options.EndpointLabel, GetEndpointLabel(context.ReceiveContext.InputAddress) },
                 { _options.ActivityNameLabel, GetActivityTypeLabel<TActivity>() },
                 { _options.ArgumentTypeLabel, GetArgumentTypeLabel<TArguments>() }
             };
+
+            AddCustomTags(ref tagList, context);
 
             _executeTotal.Add(1, tagList);
             _executeInProgress.Add(1, tagList);
@@ -252,9 +268,12 @@ namespace MassTransit.Logging
             var tagList = new TagList
             {
                 { _options.ServiceNameLabel, _options.ServiceName },
+                { _options.EndpointLabel, GetEndpointLabel(context.ReceiveContext.InputAddress) },
                 { _options.ActivityNameLabel, GetActivityTypeLabel<TActivity>() },
                 { _options.LogTypeLabel, GetLogTypeLabel<TLog>() }
             };
+
+            AddCustomTags(ref tagList, context);
 
             _compensateTotal.Add(1, tagList);
             _compensateInProgress.Add(1, tagList);
@@ -279,8 +298,12 @@ namespace MassTransit.Logging
             var tagList = new TagList
             {
                 { _options.ServiceNameLabel, _options.ServiceName },
+                { _options.EndpointLabel, GetEndpointLabel(context.DestinationAddress) },
                 { _options.MessageTypeLabel, GetMessageTypeLabel<T>() }
             };
+
+            AddCustomTags(ref tagList, context);
+
             _sendTotal.Add(1, tagList);
 
             return new StartedInstrument(exception =>
@@ -299,8 +322,11 @@ namespace MassTransit.Logging
             var tagList = new TagList
             {
                 { _options.ServiceNameLabel, _options.ServiceName },
+                { _options.EndpointLabel, GetEndpointLabel(context.DestinationAddress) },
                 { _options.MessageTypeLabel, GetMessageTypeLabel<T>() }
             };
+
+            AddCustomTags(ref tagList, context);
 
             _outboxSendTotal.Add(1, tagList);
 
@@ -331,12 +357,48 @@ namespace MassTransit.Logging
             });
         }
 
+        public static StartedInstrument? StartOutboxDeliveryInstrument(this ILogContext logContext,
+            OutboxConsumeContext consumeContext, OutboxMessageContext context)
+        {
+            if (!_isConfigured || !_outboxDeliveryTotal.Enabled)
+                return null;
+
+            var tagList = new TagList
+            {
+                { _options.ServiceNameLabel, _options.ServiceName },
+                { _options.EndpointLabel, GetEndpointLabel(context.DestinationAddress) }
+            };
+
+            AddCustomTags(ref tagList, consumeContext);
+
+            _outboxDeliveryTotal.Add(1, tagList);
+
+            return new StartedInstrument(exception =>
+            {
+                tagList.Add(_options.ExceptionTypeLabel, exception.GetType().Name);
+                _outboxDeliveryFaultTotal.Add(1, tagList);
+            });
+        }
+
         public static void TryConfigure(IServiceProvider provider)
         {
             if (_isConfigured)
                 return;
 
-            TryConfigure(provider.GetRequiredService<IOptions<InstrumentationOptions>>().Value);
+            var instrumentationOptions = provider.GetRequiredService<IOptions<InstrumentationOptions>>().Value;
+        #if NET8_0_OR_GREATER
+            var meterFactory = provider.GetService<IMeterFactory>();
+            if (meterFactory == null)
+            {
+                TryConfigure(instrumentationOptions);
+                return;
+            }
+
+            var meter = meterFactory.Create(new MeterOptions(InstrumentationOptions.MeterName) { Version = HostMetadataCache.Host.MassTransitVersion });
+            Configure(meter, instrumentationOptions);
+        #else
+            TryConfigure(instrumentationOptions);
+        #endif
         }
 
         public static void TryConfigure(InstrumentationOptions options)
@@ -344,8 +406,14 @@ namespace MassTransit.Logging
             if (_isConfigured)
                 return;
 
+            // We have to dispose manually created meter to flush instruments, some day...
+            Configure(new Meter(InstrumentationOptions.MeterName, HostMetadataCache.Host.MassTransitVersion), options);
+        }
+
+        static void Configure(Meter meter, InstrumentationOptions options)
+        {
             _options = options;
-            _meter = new Meter(InstrumentationOptions.MeterName, HostMetadataCache.Host.MassTransitVersion);
+            _meter = meter;
 
             // Counters
 
@@ -410,6 +478,12 @@ namespace MassTransit.Logging
                 "Elapsed time spent compensating an activity, in millis");
 
             _isConfigured = true;
+        }
+
+        static void AddCustomTags(ref TagList tags, PipeContext pipeContext)
+        {
+            if (pipeContext.TryGetPayload<MetricsContext>(out var metricsContext))
+                metricsContext.Populate(ref tags);
         }
 
         static string GetConsumerTypeLabel<TConsumer, TMessage>(string messageLabel)
@@ -480,7 +554,7 @@ namespace MassTransit.Logging
             if (type.IsGenericParameter)
                 return "";
 
-            if (type.GetTypeInfo().IsGenericType)
+            if (type.IsGenericType)
             {
                 var name = type.GetGenericTypeDefinition().Name;
 
@@ -491,7 +565,7 @@ namespace MassTransit.Logging
 
                 sb.Append(name);
                 sb.Append('_');
-                Type[] arguments = type.GetTypeInfo().GenericTypeArguments;
+                Type[] arguments = type.GenericTypeArguments;
                 for (var i = 0; i < arguments.Length; i++)
                 {
                     if (i > 0)

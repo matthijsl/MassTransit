@@ -1,24 +1,22 @@
+#nullable enable
 namespace MassTransit.RabbitMqTransport.Configuration
 {
     using System;
+    using RabbitMQ.Client;
 
 
     public class RabbitMqHostConfigurator :
         IRabbitMqHostConfigurator
     {
-        static readonly char[] _pathSeparator = { '/' };
+        static readonly char[] _pathSeparator = ['/'];
         readonly ConfigurationHostSettings _settings;
 
-        public RabbitMqHostConfigurator(Uri hostAddress, string connectionName = null)
+        public RabbitMqHostConfigurator(Uri hostAddress, string? connectionName = null)
         {
             _settings = hostAddress.GetConfigurationHostSettings();
 
             if (_settings.Port == 5671)
-            {
-                UseSsl(s =>
-                {
-                });
-            }
+                UseSsl();
 
             _settings.VirtualHost = Uri.UnescapeDataString(GetVirtualHost(hostAddress));
 
@@ -26,7 +24,7 @@ namespace MassTransit.RabbitMqTransport.Configuration
                 _settings.ClientProvidedName = connectionName;
         }
 
-        public RabbitMqHostConfigurator(string host, string virtualHost, ushort port = 5672, string connectionName = null)
+        public RabbitMqHostConfigurator(string host, string virtualHost, ushort port = 5672, string? connectionName = null)
         {
             _settings = new ConfigurationHostSettings
             {
@@ -53,11 +51,11 @@ namespace MassTransit.RabbitMqTransport.Configuration
             set => _settings.PublisherConfirmation = value;
         }
 
-        public void UseSsl(Action<IRabbitMqSslConfigurator> configureSsl)
+        public void UseSsl(Action<IRabbitMqSslConfigurator>? configure = null)
         {
             var configurator = new RabbitMqSslConfigurator(_settings);
 
-            configureSsl(configurator);
+            configure?.Invoke(configurator);
 
             _settings.Ssl = true;
             _settings.ClientCertificatePassphrase = configurator.CertificatePassphrase;
@@ -69,16 +67,6 @@ namespace MassTransit.RabbitMqTransport.Configuration
             _settings.SslProtocol = configurator.Protocol;
             _settings.CertificateSelectionCallback = configurator.CertificateSelectionCallback;
             _settings.CertificateValidationCallback = configurator.CertificateValidationCallback;
-        }
-
-        public void ConfigureBatchPublish(Action<IRabbitMqBatchPublishConfigurator> configure)
-        {
-            _settings.ConfigureBatch(settings =>
-            {
-                var configurator = new RabbitMqBatchPublishConfigurator(settings);
-
-                configure?.Invoke(configurator);
-            });
         }
 
         public void ContinuationTimeout(TimeSpan timeout)
@@ -116,6 +104,11 @@ namespace MassTransit.RabbitMqTransport.Configuration
             _settings.Password = password;
         }
 
+        public ICredentialsProvider CredentialsProvider
+        {
+            set => _settings.CredentialsProvider = value;
+        }
+
         public void UseCluster(Action<IRabbitMqClusterConfigurator> configureCluster)
         {
             var configurator = new RabbitMqClusterConfigurator(_settings);
@@ -139,6 +132,11 @@ namespace MassTransit.RabbitMqTransport.Configuration
             _settings.RequestedConnectionTimeout = timeSpan;
         }
 
+        public void ConnectionName(string? connectionName)
+        {
+            _settings.ClientProvidedName = connectionName;
+        }
+
         string GetVirtualHost(Uri address)
         {
             var segments = address.AbsolutePath.Split(_pathSeparator, StringSplitOptions.RemoveEmptyEntries);
@@ -150,11 +148,6 @@ namespace MassTransit.RabbitMqTransport.Configuration
                 return segments[0];
 
             throw new FormatException("The host path must be empty or contain a single virtual host name");
-        }
-
-        public void ConnectionName(string connectionName)
-        {
-            _settings.ClientProvidedName = connectionName;
         }
     }
 }

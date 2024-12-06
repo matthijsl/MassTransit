@@ -7,7 +7,6 @@ namespace MassTransit.Configuration
     using DependencyInjection.Registration;
     using Internals;
     using Microsoft.Extensions.DependencyInjection;
-    using Microsoft.Extensions.DependencyInjection.Extensions;
     using Saga;
 
 
@@ -31,6 +30,8 @@ namespace MassTransit.Configuration
         }
 
         public IContainerRegistrar Registrar { get; }
+
+        protected RequestTimeout DefaultRequestTimeout { get; private set; } = RequestTimeout.Default;
 
         public IConsumerRegistrationConfigurator<T> AddConsumer<T>(Action<IRegistrationContext, IConsumerConfigurator<T>> configure = null)
             where T : class, IConsumer
@@ -155,7 +156,7 @@ namespace MassTransit.Configuration
         public void AddRequestClient<T>(RequestTimeout timeout)
             where T : class
         {
-            Registrar.RegisterRequestClient<T>(timeout);
+            Registrar.RegisterRequestClient<T>(GetRequestTimeout(timeout));
         }
 
         public void AddRequestClient<T>(Uri destinationAddress, RequestTimeout timeout)
@@ -166,17 +167,31 @@ namespace MassTransit.Configuration
 
         public void AddRequestClient(Type requestType, RequestTimeout timeout = default)
         {
-            RequestClientRegistrationCache.Register(requestType, timeout, Registrar);
+            RequestClientRegistrationCache.Register(requestType, GetRequestTimeout(timeout), Registrar);
         }
 
         public void AddRequestClient(Type requestType, Uri destinationAddress, RequestTimeout timeout = default)
         {
-            RequestClientRegistrationCache.Register(requestType, destinationAddress, timeout, Registrar);
+            RequestClientRegistrationCache.Register(requestType, destinationAddress, GetRequestTimeout(timeout), Registrar);
+        }
+
+        public void SetDefaultRequestTimeout(RequestTimeout timeout)
+        {
+            DefaultRequestTimeout = timeout;
+        }
+
+        public void SetDefaultRequestTimeout(int? d = null, int? h = null, int? m = null, int? s = null, int? ms = null)
+        {
+            var timeout = new TimeSpan(d ?? 0, h ?? 0, m ?? 0, s ?? 0, ms ?? 0);
+            if (timeout <= TimeSpan.Zero)
+                throw new ArgumentException("The timeout must be > 0");
+
+            DefaultRequestTimeout = timeout;
         }
 
         public void SetEndpointNameFormatter(IEndpointNameFormatter endpointNameFormatter)
         {
-            _collection.TryAddSingleton(endpointNameFormatter);
+            Registrar.RegisterEndpointNameFormatter(endpointNameFormatter);
         }
 
         public ISagaRegistrationConfigurator<T> AddSagaRepository<T>()
@@ -248,6 +263,11 @@ namespace MassTransit.Configuration
         {
             get => _collection[index];
             set => _collection[index] = value;
+        }
+
+        RequestTimeout GetRequestTimeout(RequestTimeout timeout)
+        {
+            return timeout == RequestTimeout.Default ? DefaultRequestTimeout : timeout;
         }
 
         public void Complete()

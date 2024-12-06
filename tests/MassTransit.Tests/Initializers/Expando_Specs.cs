@@ -28,35 +28,40 @@ namespace MassTransit.Tests.Initializers
 
             InitializeContext<MessageContract> message = await MessageInitializerCache<MessageContract>.Initialize(dto);
 
-            Assert.That(message.Message.Id, Is.EqualTo(27));
-            Assert.That(message.Message.CustomerId, Is.EqualTo("SuperMart"));
-            Assert.That(message.Message.UniqueId, Is.EqualTo(uniqueId));
-            Assert.That(message.Message.CustomerType, Is.EqualTo(CustomerType.Public));
-            Assert.That(message.Message.TypeByName, Is.EqualTo(CustomerType.Internal));
+            Assert.Multiple(() =>
+            {
+                Assert.That(message.Message.Id, Is.EqualTo(27));
+                Assert.That(message.Message.CustomerId, Is.EqualTo("SuperMart"));
+                Assert.That(message.Message.UniqueId, Is.EqualTo(uniqueId));
+                Assert.That(message.Message.CustomerType, Is.EqualTo(CustomerType.Public));
+                Assert.That(message.Message.TypeByName, Is.EqualTo(CustomerType.Internal));
+            });
         }
 
         [Test]
         public void Should_have_an_interface_from_dictionary_converter()
         {
             var factory = new PropertyProviderFactory<IDictionary<string, object>>();
-            Assert.IsTrue(factory.TryGetPropertyConverter(out IPropertyConverter<MessageContract, object> converter));
+            Assert.That(factory.TryGetPropertyConverter(out IPropertyConverter<MessageContract, object> converter), Is.True);
         }
 
         [Test]
         public async Task Should_properly_handle_the_big_dto()
         {
-            var order = new OrderDto();
-            order.Amount = 123.45m;
-            order.Id = 27;
-            order.CustomerId = "FRANK01";
-            order.ItemType = "Crayon";
-            order.OrderState = new OrderState(OrderStatus.Validated);
-            order.TokenizedCreditCard = new TokenizedCreditCardDto
+            var order = new OrderDto
             {
-                ExpirationMonth = "12",
-                ExpirationYear = "2019",
-                PublicKey = new JObject(new JProperty("key", "12345")),
-                Token = new JObject(new JProperty("value", "Token123"))
+                Amount = 123.45m,
+                Id = 27,
+                CustomerId = "FRANK01",
+                ItemType = "Crayon",
+                OrderState = new OrderState(OrderStatus.Validated),
+                TokenizedCreditCard = new TokenizedCreditCardDto
+                {
+                    ExpirationMonth = "12",
+                    ExpirationYear = "2019",
+                    PublicKey = new JObject(new JProperty("key", "12345")),
+                    Token = new JObject(new JProperty("value", "Token123"))
+                }
             };
 
             var correlationId = Guid.NewGuid();
@@ -68,11 +73,17 @@ namespace MassTransit.Tests.Initializers
                 ConsumerProcessed = true
             });
 
-            Assert.That(message.Message.CorrelationId, Is.EqualTo(correlationId));
-            Assert.That(message.Message.Order, Is.Not.Null);
+            Assert.Multiple(() =>
+            {
+                Assert.That(message.Message.CorrelationId, Is.EqualTo(correlationId));
+                Assert.That(message.Message.Order, Is.Not.Null);
+            });
             Assert.That(message.Message.Order.OrderState, Is.Not.Null);
-            Assert.That(message.Message.Order.OrderState.Status, Is.EqualTo(OrderStatus.Validated));
-            Assert.That(message.Message.Order.TokenizedCreditCard, Is.Not.Null);
+            Assert.Multiple(() =>
+            {
+                Assert.That(message.Message.Order.OrderState.Status, Is.EqualTo(OrderStatus.Validated));
+                Assert.That(message.Message.Order.TokenizedCreditCard, Is.Not.Null);
+            });
             Assert.That(message.Message.Order.TokenizedCreditCard.ExpirationMonth, Is.EqualTo("12"));
         }
 
@@ -87,9 +98,12 @@ namespace MassTransit.Tests.Initializers
 
             InitializeContext<MessageContract> message = await MessageInitializerCache<MessageContract>.Initialize(dto);
 
-            Assert.That(message.Message.Id, Is.EqualTo(27));
-            Assert.That(message.Message.CustomerId, Is.EqualTo("SuperMart"));
-            Assert.That(message.Message.UniqueId, Is.EqualTo(uniqueId));
+            Assert.Multiple(() =>
+            {
+                Assert.That(message.Message.Id, Is.EqualTo(27));
+                Assert.That(message.Message.CustomerId, Is.EqualTo("SuperMart"));
+                Assert.That(message.Message.UniqueId, Is.EqualTo(uniqueId));
+            });
         }
 
         [Test]
@@ -101,12 +115,15 @@ namespace MassTransit.Tests.Initializers
             dto.Add(nameof(MessageContract.CustomerId), "SuperMart");
             dto.Add(nameof(MessageContract.UniqueId), uniqueId);
 
-            InitializeContext<MessageEnvelope> message = await MessageInitializerCache<MessageEnvelope>.Initialize(new {Contract = dto});
+            InitializeContext<MessageEnvelope> message = await MessageInitializerCache<MessageEnvelope>.Initialize(new { Contract = dto });
 
             Assert.That(message.Message.Contract, Is.Not.Null);
-            Assert.That(message.Message.Contract.Id, Is.EqualTo(27));
-            Assert.That(message.Message.Contract.CustomerId, Is.EqualTo("SuperMart"));
-            Assert.That(message.Message.Contract.UniqueId, Is.EqualTo(uniqueId));
+            Assert.Multiple(() =>
+            {
+                Assert.That(message.Message.Contract.Id, Is.EqualTo(27));
+                Assert.That(message.Message.Contract.CustomerId, Is.EqualTo("SuperMart"));
+                Assert.That(message.Message.Contract.UniqueId, Is.EqualTo(uniqueId));
+            });
         }
 
         [Test]
@@ -142,8 +159,11 @@ namespace MassTransit.Tests.Initializers
             InitializeContext<MessageContract> message =
                 await MessageInitializerCache<MessageContract>.Initialize(expando); // doesn't work (orders not included)
 
-            Assert.That(message.Message.Id, Is.EqualTo(32));
-            Assert.That(message.Message.Orders, Is.Not.Null);
+            Assert.Multiple(() =>
+            {
+                Assert.That(message.Message.Id, Is.EqualTo(32));
+                Assert.That(message.Message.Orders, Is.Not.Null);
+            });
         }
 
 

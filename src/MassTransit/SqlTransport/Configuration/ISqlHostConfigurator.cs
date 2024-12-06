@@ -17,20 +17,54 @@ public interface ISqlHostConfigurator
     /// </summary>
     string? ConnectionTag { set; }
 
+    /// <summary>
+    /// The database server host name. If using SQL server with an instance, set the <see cref="InstanceName" /> separately.
+    /// </summary>
     string? Host { set; }
+
+    /// <summary>
+    /// The instance name if using SQL Server instances
+    /// </summary>
+    string? InstanceName { set; }
+
+    /// <summary>
+    /// Optional, only specify if a custom port is being used.
+    /// </summary>
     int? Port { set; }
+
+    /// <summary>
+    /// The database name
+    /// </summary>
     string? Database { set; }
+
+    /// <summary>
+    /// The schema to use for the transport
+    /// </summary>
     string? Schema { set; }
+
+    /// <summary>
+    /// The username for the bus to access the transport
+    /// </summary>
     string? Username { set; }
+
+    /// <summary>
+    /// The password for the username
+    /// </summary>
     string? Password { set; }
 
     string? VirtualHost { set; }
+
     string? Area { set; }
 
     /// <summary>
     /// Sets the isolation level used for database transactions (default: Repeatable Read)
     /// </summary>
     IsolationLevel IsolationLevel { set; }
+
+    /// <summary>
+    /// Sets the maximum number of connections used by the SQL transport concurrently.
+    /// </summary>
+    int ConnectionLimit { set; }
 
     /// <summary>
     /// How often database maintenance should be performed (metrics consolidation, topology cleanup, etc.)

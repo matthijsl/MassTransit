@@ -3,7 +3,6 @@ namespace MassTransit.EventHubIntegration.Tests
     using System;
     using System.Threading.Tasks;
     using Azure.Messaging.EventHubs;
-    using Azure.Messaging.EventHubs.Consumer;
     using Azure.Messaging.EventHubs.Producer;
     using Context;
     using Contracts;
@@ -18,10 +17,11 @@ namespace MassTransit.EventHubIntegration.Tests
     public class Publish_Specs :
         InMemoryTestFixture
     {
+        const string EventHubName = "publish-eh";
+
         [Test]
         public async Task Should_receive()
         {
-            const string consumerGroup = EventHubConsumerClient.DefaultConsumerGroupName;
             TaskCompletionSource<ConsumeContext<EventHubMessage>> taskCompletionSource = GetTask<ConsumeContext<EventHubMessage>>();
             TaskCompletionSource<ConsumeContext<BusPing>> pingTaskCompletionSource = GetTask<ConsumeContext<BusPing>>();
 
@@ -45,7 +45,7 @@ namespace MassTransit.EventHubIntegration.Tests
                         k.Host(Configuration.EventHubNamespace);
                         k.Storage(Configuration.StorageAccount);
 
-                        k.ReceiveEndpoint(Configuration.EventHubName, consumerGroup, c =>
+                        k.ReceiveEndpoint(EventHubName, Configuration.ConsumerGroup, c =>
                         {
                             c.ConfigureConsumer<EventHubMessageConsumer>(context);
                         });
@@ -61,7 +61,7 @@ namespace MassTransit.EventHubIntegration.Tests
 
             try
             {
-                await using var producer = new EventHubProducerClient(Configuration.EventHubNamespace, Configuration.EventHubName);
+                await using var producer = new EventHubProducerClient(Configuration.EventHubNamespace, EventHubName);
 
                 var message = new EventHubMessageClass("test");
                 var context = new MessageSendContext<EventHubMessage>(message)
@@ -76,11 +76,15 @@ namespace MassTransit.EventHubIntegration.Tests
                 ConsumeContext<EventHubMessage> result = await taskCompletionSource.Task;
                 ConsumeContext<BusPing> ping = await pingTaskCompletionSource.Task;
 
-                Assert.AreEqual(message.Text, result.Message.Text);
+                Assert.Multiple(() =>
+                {
+                    Assert.That(result.Message.Text, Is.EqualTo(message.Text));
 
-                Assert.AreEqual(result.CorrelationId, ping.InitiatorId);
-                Assert.That(ping.SourceAddress,
-                    Is.EqualTo(new Uri($"loopback://localhost/{EventHubEndpointAddress.PathPrefix}/{Configuration.EventHubName}/{consumerGroup}")));
+                    Assert.That(ping.InitiatorId, Is.EqualTo(result.CorrelationId));
+                    Assert.That(ping.SourceAddress,
+                        Is.EqualTo(new Uri(
+                            $"loopback://localhost/{EventHubEndpointAddress.PathPrefix}/{EventHubName}/{Configuration.ConsumerGroup}")));
+                });
             }
             finally
             {

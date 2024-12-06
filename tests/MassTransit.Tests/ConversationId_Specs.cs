@@ -21,7 +21,9 @@
             Assert.That(context.ConversationId.HasValue, Is.True);
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<PingMessage>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
@@ -44,7 +46,9 @@
             Assert.That(context.ConversationId.HasValue, Is.True);
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<PingMessage>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
@@ -70,12 +74,17 @@
 
             ConsumeContext<PongMessage> responseContext = await responseHandled;
 
-            Assert.That(responseContext.ConversationId.HasValue, Is.True);
+            Assert.Multiple(() =>
+            {
+                Assert.That(responseContext.ConversationId.HasValue, Is.True);
 
-            Assert.That(responseContext.ConversationId, Is.EqualTo(context.ConversationId));
+                Assert.That(responseContext.ConversationId, Is.EqualTo(context.ConversationId));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<PingMessage>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
@@ -103,14 +112,19 @@
 
             ConsumeContext<PongMessage> responseContext = await responseHandled;
 
-            Assert.That(responseContext.ConversationId.HasValue);
+            Assert.Multiple(() =>
+            {
+                Assert.That(responseContext.ConversationId.HasValue);
 
-            Assert.That(responseContext.ConversationId.Value, Is.Not.EqualTo(conversationId));
+                Assert.That(responseContext.ConversationId.Value, Is.Not.EqualTo(conversationId));
 
-            Assert.That(responseContext.Headers.Get<Guid>(MessageHeaders.InitiatingConversationId), Is.EqualTo(conversationId));
+                Assert.That(responseContext.Headers.Get<Guid>(MessageHeaders.InitiatingConversationId), Is.EqualTo(conversationId));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<PingMessage>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
@@ -118,6 +132,7 @@
                 context.RespondAsync(new PongMessage(context.Message.CorrelationId), x => x.StartNewConversation()));
         }
     }
+
 
     [TestFixture]
     public class Starting_a_new_conversation_from_a_new_message :
@@ -132,14 +147,19 @@
 
             ConsumeContext<PingMessage> context = await _handled;
 
-            Assert.That(context.ConversationId.HasValue);
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.ConversationId.HasValue);
 
-            Assert.That(context.ConversationId.Value, Is.EqualTo(conversationId));
+                Assert.That(context.ConversationId.Value, Is.EqualTo(conversationId));
 
-            Assert.That(context.Headers.Get<Guid>(MessageHeaders.InitiatingConversationId), Is.Null);
+                Assert.That(context.Headers.Get<Guid>(MessageHeaders.InitiatingConversationId), Is.Null);
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<PingMessage>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {

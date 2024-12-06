@@ -16,9 +16,9 @@ namespace MassTransit.Serialization
         IMessageSerializer
     {
         readonly JsonMessageEnvelope? _envelope;
+        readonly string[]? _messageTypes;
         readonly JsonSerializerOptions _options;
         readonly RawSerializerOptions? _rawOptions;
-        readonly string[]? _messageTypes;
         object? _message;
 
         public SystemTextJsonBodyMessageSerializer(MessageEnvelope envelope, ContentType contentType, JsonSerializerOptions options,
@@ -58,13 +58,13 @@ namespace MassTransit.Serialization
         {
             _envelope?.Update(context);
 
-            if(_messageTypes != null)
+            if (_messageTypes != null)
                 context.SupportedMessageTypes = _messageTypes;
 
             if (_rawOptions.HasValue)
             {
                 if (_rawOptions.Value.HasFlag(RawSerializerOptions.AddTransportHeaders))
-                    SetRawMessageHeaders<T>(context);
+                    SetRawMessageHeaders(context);
 
                 return new SystemTextJsonRawMessageBody<T>(context, _options, _message);
             }

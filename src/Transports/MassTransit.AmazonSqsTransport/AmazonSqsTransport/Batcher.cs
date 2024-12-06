@@ -13,7 +13,7 @@ namespace MassTransit.AmazonSqsTransport
     {
         readonly Task _batchTask;
         readonly Channel<BatchEntry<TEntry>> _channel;
-        readonly ChannelExecutor _executor;
+        readonly TaskExecutor _executor;
         readonly BatchSettings _settings;
 
         protected Batcher(BatchSettings settings = null)
@@ -29,7 +29,7 @@ namespace MassTransit.AmazonSqsTransport
             };
 
             _channel = Channel.CreateBounded<BatchEntry<TEntry>>(channelOptions);
-            _executor = new ChannelExecutor(2, _settings.BatchLimit);
+            _executor = new TaskExecutor(2, _settings.BatchLimit);
             _batchTask = Task.Run(WaitForBatch);
         }
 
@@ -44,7 +44,7 @@ namespace MassTransit.AmazonSqsTransport
 
         public async ValueTask DisposeAsync()
         {
-            _channel.Writer.Complete();
+            _channel.Writer.TryComplete();
 
             await _batchTask.ConfigureAwait(false);
 
@@ -80,24 +80,27 @@ namespace MassTransit.AmazonSqsTransport
 
                     while (entryId < _settings.MessageLimit && batchLength < _settings.SizeLimit)
                     {
-                        if (_channel.Reader.TryRead(out var entry))
+                        if (_channel.Reader.TryPeek(out BatchEntry<TEntry> entry))
                         {
-                            batchLength += AddingEntry(entry.Entry, entryId.ToString());
+                            var entryLength = CalculateEntryLength(entry.Entry, entryId.ToString());
+                            if (entryLength + batchLength > _settings.SizeLimit)
+                                break;
+
+                            batchLength += entryLength;
                             batch.Add(entry);
                             entryId++;
+
+                            await _channel.Reader.ReadAsync(CancellationToken.None).ConfigureAwait(false);
                         }
                         else if (await _channel.Reader.WaitToReadAsync(batchToken.Token).ConfigureAwait(false) == false)
-                        {
                             break;
-                        }
-
                     }
                 }
                 catch (OperationCanceledException exception) when (exception.CancellationToken == batchToken.Token && batch.Count > 0)
                 {
                 }
 
-                await _executor.Push(() => ExecuteBatch(batch)).ConfigureAwait(false);
+                await _executor.Push(() => ExecuteBatch(batch), CancellationToken.None).ConfigureAwait(false);
             }
             catch (OperationCanceledException exception) when (exception.CancellationToken == batchToken.Token)
             {
@@ -113,7 +116,7 @@ namespace MassTransit.AmazonSqsTransport
             }
         }
 
-        protected abstract int AddingEntry(TEntry entry, string entryId);
+        protected abstract int CalculateEntryLength(TEntry entry, string entryId);
 
         protected abstract Task SendBatch(IList<BatchEntry<TEntry>> batch);
 

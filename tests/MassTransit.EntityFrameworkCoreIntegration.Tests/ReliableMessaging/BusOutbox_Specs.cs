@@ -72,10 +72,13 @@ namespace MassTransit.EntityFrameworkCoreIntegration.Tests.ReliableMessaging
 
                 IReceivedMessage<PingMessage> context = harness.Consumed.Select<PingMessage>().Single();
 
-                Assert.That(context.Context.MessageId, Is.Not.Null);
-                Assert.That(context.Context.ConversationId, Is.Not.Null);
-                Assert.That(context.Context.DestinationAddress, Is.Not.Null);
-                Assert.That(context.Context.SourceAddress, Is.Not.Null);
+                Assert.Multiple(() =>
+                {
+                    Assert.That(context.Context.MessageId, Is.Not.Null);
+                    Assert.That(context.Context.ConversationId, Is.Not.Null);
+                    Assert.That(context.Context.DestinationAddress, Is.Not.Null);
+                    Assert.That(context.Context.SourceAddress, Is.Not.Null);
+                });
             }
             finally
             {
@@ -142,14 +145,17 @@ namespace MassTransit.EntityFrameworkCoreIntegration.Tests.ReliableMessaging
 
                 IReceivedMessage<PingMessage> context = await consumerHarness.Consumed.SelectAsync<PingMessage>().FirstOrDefault();
 
-                Assert.That(context.Context.Headers.TryGetHeader("Test-Header", out var header), Is.True);
+                Assert.Multiple(() =>
+                {
+                    Assert.That(context.Context.Headers.TryGetHeader("Test-Header", out var header), Is.True);
 
-                Assert.That(header, Is.EqualTo("Test-Value"));
+                    Assert.That(header, Is.EqualTo("Test-Value"));
 
-                Assert.That(context.Context.MessageId, Is.Not.Null);
-                Assert.That(context.Context.ConversationId, Is.Not.Null);
-                Assert.That(context.Context.DestinationAddress, Is.Not.Null);
-                Assert.That(context.Context.SourceAddress, Is.Not.Null);
+                    Assert.That(context.Context.MessageId, Is.Not.Null);
+                    Assert.That(context.Context.ConversationId, Is.Not.Null);
+                    Assert.That(context.Context.DestinationAddress, Is.Not.Null);
+                    Assert.That(context.Context.SourceAddress, Is.Not.Null);
+                });
             }
             finally
             {
@@ -378,7 +384,7 @@ namespace MassTransit.EntityFrameworkCoreIntegration.Tests.ReliableMessaging
             var totalTimer = Stopwatch.StartNew();
             var sendTimer = Stopwatch.StartNew();
 
-            const int loopCount = 100;
+            const int loopCount = 400;
             const int messagesPerLoop = 3;
             await Task.WhenAll(Enumerable.Range(0, loopCount).Select(async n =>
             {

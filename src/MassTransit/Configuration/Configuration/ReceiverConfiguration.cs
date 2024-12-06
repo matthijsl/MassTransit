@@ -11,7 +11,7 @@ namespace MassTransit.Configuration
         IReceiveEndpointConfigurator
     {
         readonly IReceiveEndpointConfiguration _configuration;
-        protected readonly IList<IReceiveEndpointSpecification> Specifications;
+        protected readonly List<IReceiveEndpointSpecification> Specifications;
 
         protected ReceiverConfiguration(IReceiveEndpointConfiguration endpointConfiguration)
             : base(endpointConfiguration)
@@ -51,6 +51,10 @@ namespace MassTransit.Configuration
 
         public void ConfigureMessageTopology<T>(bool enabled = true)
             where T : class
+        {
+        }
+
+        public void ConfigureMessageTopology(Type messageType, bool enabled = true)
         {
         }
 

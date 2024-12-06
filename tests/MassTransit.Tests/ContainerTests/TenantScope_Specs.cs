@@ -14,106 +14,6 @@ namespace MassTransit.Tests.ContainerTests
     public class When_specifying_a_scoped_filter
     {
         [Test]
-        public async Task It_should_be_resolved_prior_to_resolving_the_consumer()
-        {
-            await using var provider = new ServiceCollection()
-                .AddScoped<TenantContext>()
-                .AddScoped<FakeTenantDbContext>()
-                .AddMassTransitTestHarness(x =>
-                {
-                    x.AddConsumer<TenantConsumer>();
-
-                    x.AddConfigureEndpointsCallback((provider, name, cfg) =>
-                    {
-                        cfg.UseConsumeFilter(typeof(TenantConsumeContextFilter<>), provider);
-                    });
-
-                    x.UsingInMemory((context, cfg) =>
-                    {
-                        cfg.UsePublishFilter(typeof(PublishTenantHeaderFilter<>), context);
-
-                        cfg.ConfigureEndpoints(context);
-                    });
-                })
-                .BuildServiceProvider(true);
-
-            var harness = provider.GetTestHarness();
-
-            await harness.Start();
-
-            IRequestClient<TenantRequest> client = harness.GetRequestClient<TenantRequest>();
-
-            await client.GetResponse<TenantResponse>(new TenantRequest());
-        }
-
-        [Test]
-        public async Task It_should_be_resolved_prior_to_resolving_the_consumer_for_message_type()
-        {
-            await using var provider = new ServiceCollection()
-                .AddScoped<TenantContext>()
-                .AddScoped<FakeTenantDbContext>()
-                .AddMassTransitTestHarness(x =>
-                {
-                    x.AddConsumer<TenantConsumer>();
-
-                    x.AddConfigureEndpointsCallback((context, name, cfg) =>
-                    {
-                        cfg.UseConsumeFilter<TenantConsumeContextFilter>(context);
-                    });
-
-                    x.UsingInMemory((context, cfg) =>
-                    {
-                        cfg.UsePublishFilter(typeof(PublishTenantHeaderFilter<>), context);
-
-                        cfg.ConfigureEndpoints(context);
-                    });
-                })
-                .BuildServiceProvider(true);
-
-            var harness = provider.GetTestHarness();
-
-            await harness.Start();
-
-            IRequestClient<TenantRequest> client = harness.GetRequestClient<TenantRequest>();
-
-            await client.GetResponse<TenantResponse>(new TenantRequest());
-        }
-
-        [Test]
-        public async Task It_should_be_resolved_prior_to_resolving_the_consumer_with_send()
-        {
-            await using var provider = new ServiceCollection()
-                .AddScoped<TenantContext>()
-                .AddScoped<FakeTenantDbContext>()
-                .AddMassTransitTestHarness(x =>
-                {
-                    x.AddConsumer<TenantConsumer>();
-                    x.AddRequestClient<TenantRequest>(new Uri($"queue:{DefaultEndpointNameFormatter.Instance.Consumer<TenantConsumer>()}"));
-
-                    x.AddConfigureEndpointsCallback((provider, name, cfg) =>
-                    {
-                        cfg.UseConsumeFilter(typeof(TenantConsumeContextFilter<>), provider);
-                    });
-
-                    x.UsingInMemory((context, cfg) =>
-                    {
-                        cfg.UseSendFilter(typeof(SendTenantHeaderFilter<>), context);
-
-                        cfg.ConfigureEndpoints(context);
-                    });
-                })
-                .BuildServiceProvider(true);
-
-            var harness = provider.GetTestHarness();
-
-            await harness.Start();
-
-            IRequestClient<TenantRequest> client = harness.GetRequestClient<TenantRequest>();
-
-            await client.GetResponse<TenantResponse>(new TenantRequest());
-        }
-
-        [Test]
         public async Task It_should_be_resolved_after_the_message_retry_filter()
         {
             await using var provider = new ServiceCollection()
@@ -181,7 +81,140 @@ namespace MassTransit.Tests.ContainerTests
 
             await harness.Bus.Execute(builder.Build());
 
-            Assert.IsTrue(await harness.Published.Any<RoutingSlipCompleted>());
+            Assert.That(await harness.Published.Any<RoutingSlipCompleted>(), Is.True);
+        }
+
+        [Test]
+        public async Task It_should_be_resolved_prior_to_resolving_the_consumer()
+        {
+            await using var provider = new ServiceCollection()
+                .AddScoped<TenantContext>()
+                .AddScoped<FakeTenantDbContext>()
+                .AddMassTransitTestHarness(x =>
+                {
+                    x.AddConsumer<TenantConsumer>();
+
+                    x.AddConfigureEndpointsCallback((provider, name, cfg) =>
+                    {
+                        cfg.UseConsumeFilter(typeof(TenantConsumeContextFilter<>), provider);
+                    });
+
+                    x.UsingInMemory((context, cfg) =>
+                    {
+                        cfg.UsePublishFilter(typeof(PublishTenantHeaderFilter<>), context);
+
+                        cfg.ConfigureEndpoints(context);
+                    });
+                })
+                .BuildServiceProvider(true);
+
+            var harness = provider.GetTestHarness();
+
+            await harness.Start();
+
+            IRequestClient<TenantRequest> client = harness.GetRequestClient<TenantRequest>();
+
+            await client.GetResponse<TenantResponse>(new TenantRequest());
+        }
+
+        [Test]
+        public async Task It_should_be_resolved_prior_to_resolving_the_consumer_for_message_type()
+        {
+            await using var provider = new ServiceCollection()
+                .AddScoped<TenantContext>()
+                .AddScoped<FakeTenantDbContext>()
+                .AddMassTransitTestHarness(x =>
+                {
+                    x.AddConsumer<TenantConsumer>();
+
+                    x.AddConfigureEndpointsCallback((context, name, cfg) =>
+                    {
+                        cfg.UseConsumeFilter<TenantConsumeContextFilter>(context);
+                    });
+
+                    x.UsingInMemory((context, cfg) =>
+                    {
+                        cfg.UsePublishFilter(typeof(PublishTenantHeaderFilter<>), context);
+
+                        cfg.ConfigureEndpoints(context);
+                    });
+                })
+                .BuildServiceProvider(true);
+
+            var harness = provider.GetTestHarness();
+
+            await harness.Start();
+
+            IRequestClient<TenantRequest> client = harness.GetRequestClient<TenantRequest>();
+
+            await client.GetResponse<TenantResponse>(new TenantRequest());
+        }
+
+        [Test]
+        public async Task It_should_be_resolved_prior_to_resolving_the_consumer_for_message_type_publish()
+        {
+            await using var provider = new ServiceCollection()
+                .AddScoped<TenantContext>()
+                .AddScoped<FakeTenantDbContext>()
+                .AddMassTransitTestHarness(x =>
+                {
+                    x.AddConsumer<TenantConsumer>();
+
+                    x.AddConfigureEndpointsCallback((context, name, cfg) =>
+                    {
+                        cfg.UseConsumeFilter<TenantConsumeContextFilter>(context);
+                    });
+
+                    x.UsingInMemory((context, cfg) =>
+                    {
+                        cfg.UsePublishFilter<PublishTenantHeaderMessageFilter>(context);
+
+                        cfg.ConfigureEndpoints(context);
+                    });
+                })
+                .BuildServiceProvider(true);
+
+            var harness = provider.GetTestHarness();
+
+            await harness.Start();
+
+            IRequestClient<TenantRequest> client = harness.GetRequestClient<TenantRequest>();
+
+            await client.GetResponse<TenantResponse>(new TenantRequest());
+        }
+
+        [Test]
+        public async Task It_should_be_resolved_prior_to_resolving_the_consumer_with_send()
+        {
+            await using var provider = new ServiceCollection()
+                .AddScoped<TenantContext>()
+                .AddScoped<FakeTenantDbContext>()
+                .AddMassTransitTestHarness(x =>
+                {
+                    x.AddConsumer<TenantConsumer>();
+                    x.AddRequestClient<TenantRequest>(new Uri($"queue:{DefaultEndpointNameFormatter.Instance.Consumer<TenantConsumer>()}"));
+
+                    x.AddConfigureEndpointsCallback((provider, name, cfg) =>
+                    {
+                        cfg.UseConsumeFilter(typeof(TenantConsumeContextFilter<>), provider);
+                    });
+
+                    x.UsingInMemory((context, cfg) =>
+                    {
+                        cfg.UseSendFilter(typeof(SendTenantHeaderFilter<>), context);
+
+                        cfg.ConfigureEndpoints(context);
+                    });
+                })
+                .BuildServiceProvider(true);
+
+            var harness = provider.GetTestHarness();
+
+            await harness.Start();
+
+            IRequestClient<TenantRequest> client = harness.GetRequestClient<TenantRequest>();
+
+            await client.GetResponse<TenantResponse>(new TenantRequest());
         }
 
 
@@ -286,6 +319,32 @@ namespace MassTransit.Tests.ContainerTests
             }
 
             public Task Send(PublishContext<T> context, IPipe<PublishContext<T>> next)
+            {
+                var tenantId = NewId.NextGuid().ToString();
+                _logger.LogInformation($"{tenantId} Setting header for tenant");
+                context.Headers.Set("X-TenantId", tenantId);
+
+                return next.Send(context);
+            }
+        }
+
+
+        class PublishTenantHeaderMessageFilter :
+            IFilter<PublishContext<TenantRequest>>
+        {
+            readonly ILogger<PublishTenantHeaderMessageFilter> _logger;
+
+            public PublishTenantHeaderMessageFilter(ILogger<PublishTenantHeaderMessageFilter> logger)
+            {
+                _logger = logger;
+            }
+
+            public void Probe(ProbeContext context)
+            {
+                context.CreateFilterScope("PublishTenantHeaderFilter");
+            }
+
+            public Task Send(PublishContext<TenantRequest> context, IPipe<PublishContext<TenantRequest>> next)
             {
                 var tenantId = NewId.NextGuid().ToString();
                 _logger.LogInformation($"{tenantId} Setting header for tenant");

@@ -37,6 +37,11 @@ namespace MassTransit.SqlTransport.Configuration
             set => _settings.Host = value;
         }
 
+        public string? InstanceName
+        {
+            set => _settings.InstanceName = value;
+        }
+
         public int? Port
         {
             set => _settings.Port = value;
@@ -75,6 +80,11 @@ namespace MassTransit.SqlTransport.Configuration
         public IsolationLevel IsolationLevel
         {
             set => _settings.IsolationLevel = value;
+        }
+
+        public int ConnectionLimit
+        {
+            set => _settings.ConnectionLimit = value;
         }
 
         public TimeSpan MaintenanceInterval

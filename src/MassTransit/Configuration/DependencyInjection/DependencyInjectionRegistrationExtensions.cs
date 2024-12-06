@@ -42,6 +42,31 @@ namespace MassTransit
 
             configurator.Complete();
 
+            CheckForBusImplementation<IBus>(collection);
+
+            return collection;
+        }
+
+        /// <summary>
+        /// Adds the MassTransit Mediator to the <paramref name="collection" />, and allows consumers, sagas, and activities (which are not supported
+        /// by the Mediator) to be configured.
+        /// </summary>
+        /// <param name="collection"></param>
+        /// <param name="configure"></param>
+        /// <param name="baseAddress"></param>
+        public static IServiceCollection AddMediator(this IServiceCollection collection, Uri baseAddress, Action<IMediatorRegistrationConfigurator> configure = null)
+        {
+            if (collection.Any(d => d.ServiceType == typeof(IMediator)))
+                throw new ConfigurationException("AddMediator() was already called and may only be called once per container.");
+
+            var configurator = new ServiceCollectionMediatorConfigurator(collection, baseAddress);
+
+            configure?.Invoke(configurator);
+
+            AddInstrumentation(collection);
+
+            configurator.Complete();
+
             return collection;
         }
 
@@ -53,18 +78,7 @@ namespace MassTransit
         /// <param name="configure"></param>
         public static IServiceCollection AddMediator(this IServiceCollection collection, Action<IMediatorRegistrationConfigurator> configure = null)
         {
-            if (collection.Any(d => d.ServiceType == typeof(IMediator)))
-                throw new ConfigurationException("AddMediator() was already called and may only be called once per container.");
-
-            var configurator = new ServiceCollectionMediatorConfigurator(collection);
-
-            configure?.Invoke(configurator);
-
-            AddInstrumentation(collection);
-
-            configurator.Complete();
-
-            return collection;
+            return AddMediator(collection, null, configure);
         }
 
         /// <summary>
@@ -96,7 +110,18 @@ namespace MassTransit
 
             configurator.Complete();
 
+            CheckForBusImplementation<TBus>(collection);
+
             return collection;
+        }
+
+        static void CheckForBusImplementation<TBus>(IServiceCollection collection)
+            where TBus : class, IBus
+        {
+            if (!collection.Any(x => x.ServiceType == typeof(TBus)))
+            {
+                throw new ConfigurationException($"No {typeof(TBus)} implementation was found in the container. Please ensure that the AddMassTransit() configures the bus (at least UsingInMemory)");
+            }
         }
 
         /// <summary>

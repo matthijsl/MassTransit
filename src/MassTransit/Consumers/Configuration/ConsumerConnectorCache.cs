@@ -2,7 +2,6 @@
 {
     using System;
     using System.Collections.Concurrent;
-    using System.Threading;
     using Consumer;
 
 
@@ -14,8 +13,7 @@
 
         ConsumerConnectorCache()
         {
-            _connector = new Lazy<ConsumerConnector<TConsumer>>(() => new ConsumerConnector<TConsumer>(),
-                LazyThreadSafetyMode.PublicationOnly);
+            _connector = new Lazy<ConsumerConnector<TConsumer>>(() => new ConsumerConnector<TConsumer>());
         }
 
         public static IConsumerConnector Connector => Cached.Instance.Value.Connector;
@@ -25,8 +23,7 @@
 
         static class Cached
         {
-            internal static readonly Lazy<IConsumerConnectorCache> Instance = new Lazy<IConsumerConnectorCache>(
-                () => new ConsumerConnectorCache<TConsumer>(), LazyThreadSafetyMode.PublicationOnly);
+            internal static readonly Lazy<IConsumerConnectorCache> Instance = new Lazy<IConsumerConnectorCache>(() => new ConsumerConnectorCache<TConsumer>());
         }
     }
 

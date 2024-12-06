@@ -2,7 +2,6 @@ namespace MassTransit.RetryPolicies.ExceptionFilters
 {
     using System;
     using System.Linq;
-    using System.Reflection;
 
 
     public class IgnoreExceptionFilter :
@@ -18,17 +17,14 @@ namespace MassTransit.RetryPolicies.ExceptionFilters
         void IProbeSite.Probe(ProbeContext context)
         {
             var scope = context.CreateScope("except");
-            scope.Set(new
-            {
-                ExceptionTypes = _exceptionTypes.Select(x => x.Name).ToArray()
-            });
+            scope.Set(new { ExceptionTypes = _exceptionTypes.Select(x => x.Name).ToArray() });
         }
 
         bool IExceptionFilter.Match(Exception exception)
         {
             for (var i = 0; i < _exceptionTypes.Length; i++)
             {
-                if (_exceptionTypes[i].GetTypeInfo().IsInstanceOfType(exception))
+                if (_exceptionTypes[i].IsInstanceOfType(exception))
                     return false;
             }
 

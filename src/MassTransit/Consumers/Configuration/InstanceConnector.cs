@@ -3,6 +3,7 @@
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using Metadata;
     using Util;
 
 
@@ -10,11 +11,11 @@
         IInstanceConnector
         where TConsumer : class
     {
-        readonly IList<IInstanceMessageConnector<TConsumer>> _connectors;
+        readonly List<IInstanceMessageConnector<TConsumer>> _connectors;
 
         public InstanceConnector()
         {
-            if (MessageTypeCache<TConsumer>.HasSagaInterfaces)
+            if (RegistrationMetadata.IsSaga(typeof(TConsumer)))
                 throw new ConfigurationException("A saga cannot be registered as a consumer");
 
             _connectors = Consumes()

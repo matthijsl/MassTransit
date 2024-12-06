@@ -13,6 +13,8 @@ namespace MassTransit.EventHubIntegration.Tests
     public class ProducerPipe_Specs :
         InMemoryTestFixture
     {
+        const string EventHubName = "produce-eh";
+
         [Test]
         public async Task Should_produce()
         {
@@ -36,7 +38,7 @@ namespace MassTransit.EventHubIntegration.Tests
                         k.Host(Configuration.EventHubNamespace);
                         k.Storage(Configuration.StorageAccount);
 
-                        k.ReceiveEndpoint(Configuration.EventHubName, c =>
+                        k.ReceiveEndpoint(EventHubName, Configuration.ConsumerGroup, c =>
                         {
                             c.ConfigureConsumer<EventHubMessageConsumer>(context);
                         });
@@ -51,10 +53,10 @@ namespace MassTransit.EventHubIntegration.Tests
 
             await busControl.StartAsync(TestCancellationToken);
 
-            var serviceScope = provider.CreateScope();
+            var serviceScope = provider.CreateAsyncScope();
 
             var producerProvider = serviceScope.ServiceProvider.GetRequiredService<IEventHubProducerProvider>();
-            var producer = await producerProvider.GetProducer(Configuration.EventHubName);
+            var producer = await producerProvider.GetProducer(EventHubName);
 
             try
             {
@@ -62,16 +64,19 @@ namespace MassTransit.EventHubIntegration.Tests
 
                 var result = await sendFilterTaskCompletionSource.Task;
 
-                Assert.IsTrue(result.TryGetPayload<EventHubSendContext>(out _));
-                Assert.IsTrue(result.TryGetPayload<EventHubSendContext<EventHubMessage>>(out _));
-                Assert.That(result.DestinationAddress,
-                    Is.EqualTo(new Uri($"loopback://localhost/{EventHubEndpointAddress.PathPrefix}/{Configuration.EventHubName}")));
+                Assert.Multiple(() =>
+                {
+                    Assert.That(result.TryGetPayload<EventHubSendContext>(out _), Is.True);
+                    Assert.That(result.TryGetPayload<EventHubSendContext<EventHubMessage>>(out _), Is.True);
+                    Assert.That(result.DestinationAddress,
+                        Is.EqualTo(new Uri($"loopback://localhost/{EventHubEndpointAddress.PathPrefix}/{EventHubName}")));
+                });
 
                 await taskCompletionSource.Task;
             }
             finally
             {
-                serviceScope.Dispose();
+                await serviceScope.DisposeAsync();
 
                 await busControl.StopAsync(TestCancellationToken);
 

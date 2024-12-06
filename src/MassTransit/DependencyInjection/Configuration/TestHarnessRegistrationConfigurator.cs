@@ -200,6 +200,16 @@ namespace MassTransit.Configuration
             _configurator.AddRequestClient(requestType, destinationAddress, timeout);
         }
 
+        public void SetDefaultRequestTimeout(RequestTimeout timeout)
+        {
+            _configurator.SetDefaultRequestTimeout(timeout);
+        }
+
+        public void SetDefaultRequestTimeout(int? d = null, int? h = null, int? m = null, int? s = null, int? ms = null)
+        {
+            _configurator.SetDefaultRequestTimeout(d, h, m, s, ms);
+        }
+
         public void SetEndpointNameFormatter(IEndpointNameFormatter endpointNameFormatter)
         {
             _configurator.SetEndpointNameFormatter(endpointNameFormatter);
@@ -233,6 +243,11 @@ namespace MassTransit.Configuration
         public void AddConfigureEndpointsCallback(ConfigureEndpointsProviderCallback callback)
         {
             _configurator.AddConfigureEndpointsCallback(callback);
+        }
+
+        public void SetRequestClientFactory(Func<IBus, RequestTimeout, IClientFactory> clientFactory)
+        {
+            _configurator.SetRequestClientFactory(clientFactory);
         }
 
         public IContainerRegistrar Registrar => _configurator.Registrar;

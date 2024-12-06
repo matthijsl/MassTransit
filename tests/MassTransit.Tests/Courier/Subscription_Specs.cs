@@ -1,7 +1,6 @@
 ﻿namespace MassTransit.Tests.Courier
 {
     using System;
-    using System.Linq;
     using System.Text.Json;
     using System.Threading.Tasks;
     using MassTransit.Courier.Contracts;
@@ -45,7 +44,7 @@
 
             var loaded = TestExtensionsForJson.GetRoutingSlip(jsonString);
 
-            Assert.AreEqual(RoutingSlipEvents.Completed | RoutingSlipEvents.Faulted, loaded.Subscriptions[0].Events);
+            Assert.That(loaded.Subscriptions[0].Events, Is.EqualTo(RoutingSlipEvents.Completed | RoutingSlipEvents.Faulted));
         }
     }
 
@@ -59,7 +58,7 @@
         {
             ConsumeContext<RoutingSlipActivityCompleted> context = await _activityCompleted;
 
-            Assert.IsFalse(context.Message.Data.ContainsKey("OriginalValue"));
+            Assert.That(context.Message.Data.ContainsKey("OriginalValue"), Is.False);
         }
 
         [Test]
@@ -67,7 +66,7 @@
         {
             ConsumeContext<RoutingSlipActivityCompleted> context = await _activityCompleted;
 
-            Assert.IsFalse(context.Message.Variables.ContainsKey("Variable"));
+            Assert.That(context.Message.Variables.ContainsKey("Variable"), Is.False);
         }
 
         [Test]
@@ -75,7 +74,7 @@
         {
             ConsumeContext<RoutingSlipActivityCompleted> context = await _activityCompleted;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
         }
 
         [Test]
@@ -92,17 +91,18 @@
 
             var loaded = TestExtensionsForJson.GetRoutingSlip(jsonString);
 
-            Assert.AreEqual(RoutingSlipEvents.Completed | RoutingSlipEvents.Faulted, loaded.Subscriptions[0].Events);
+            Assert.That(loaded.Subscriptions[0].Events, Is.EqualTo(RoutingSlipEvents.Completed | RoutingSlipEvents.Faulted));
         }
 
-        Task<ConsumeContext<RoutingSlipCompleted>> _completed;
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<RoutingSlipActivityCompleted>> _activityCompleted;
+        #pragma warning restore NUnit1032
         Guid _trackingNumber;
 
         [OneTimeSetUp]
         public async Task Should_publish_the_completed_event()
         {
-            _completed = SubscribeHandler<RoutingSlipCompleted>();
+            _ = SubscribeHandler<RoutingSlipCompleted>();
             _activityCompleted = SubscribeHandler<RoutingSlipActivityCompleted>();
 
             _trackingNumber = NewId.NextGuid();
@@ -124,7 +124,6 @@
     }
 
 
-
     [TestFixture(typeof(Json))]
     [TestFixture(typeof(RawJson))]
     [TestFixture(typeof(NewtonsoftJson))]
@@ -132,13 +131,6 @@
     public class Adding_a_custom_routing_slip_event_subscription<T>
         where T : new()
     {
-        readonly ITestBusConfiguration _configuration;
-
-        public Adding_a_custom_routing_slip_event_subscription()
-        {
-            _configuration = new T() as ITestBusConfiguration;
-        }
-
         [Test]
         public async Task Should_be_sent()
         {
@@ -173,6 +165,13 @@
             Assert.That(completed, Is.Not.Null);
 
             Assert.That(completed.Context.Message.Value, Is.EqualTo("Secret Value"));
+        }
+
+        readonly ITestBusConfiguration _configuration;
+
+        public Adding_a_custom_routing_slip_event_subscription()
+        {
+            _configuration = new T() as ITestBusConfiguration;
         }
 
 

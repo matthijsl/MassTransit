@@ -3,7 +3,6 @@ namespace MassTransit
     using System;
     using System.Threading.Tasks;
     using Configuration;
-    using Middleware;
 
 
     public static class Pipe
@@ -102,7 +101,7 @@ namespace MassTransit
         public static IPipe<T> Empty<T>()
             where T : class, PipeContext
         {
-            return Cache<T>.EmptyPipe;
+            return PipeConfigurator<T>.Cache.EmptyPipe;
         }
 
         /// <summary>
@@ -118,7 +117,7 @@ namespace MassTransit
             if (filter == null)
                 throw new ArgumentNullException(nameof(filter));
 
-            return new LastPipe<T>(filter);
+            return new PipeConfigurator<T>.LastPipe(filter);
         }
 
 
@@ -151,8 +150,8 @@ namespace MassTransit
             IPipe<T>
             where T : class, PipeContext
         {
-            readonly IPipe<T> _nextPipe;
             readonly Action<T> _callback;
+            readonly IPipe<T> _nextPipe;
 
             public PushPipe(IPipe<T> nextPipe, Action<T> callback)
             {
@@ -194,13 +193,6 @@ namespace MassTransit
             {
                 context.CreateFilterScope("executeAsync");
             }
-        }
-
-
-        static class Cache<TContext>
-            where TContext : class, PipeContext
-        {
-            internal static readonly IPipe<TContext> EmptyPipe = new EmptyPipe<TContext>();
         }
     }
 }

@@ -3,20 +3,19 @@
     using System;
     using System.Collections.Generic;
     using System.Linq;
-    using System.Reflection;
 
 
     public class GraphStateMachineVisitor<TSaga> :
         StateMachineVisitor
-        where TSaga : class, ISaga
+        where TSaga : class, SagaStateMachineInstance
     {
         readonly HashSet<Edge> _edges;
         readonly Dictionary<Event, Vertex> _events;
         readonly StateMachine<TSaga> _machine;
         readonly Dictionary<State, Vertex> _states;
+        Edge _currentEdge;
         Vertex _currentEvent;
         Vertex _currentState;
-        Edge _currentEdge;
 
         public GraphStateMachineVisitor(StateMachine<TSaga> machine)
         {
@@ -70,15 +69,6 @@
             next(@event);
         }
 
-        void AddCurrentEdge()
-        {
-            if (_currentEvent.IsComposite || _currentEdge != null)
-                return;
-
-            _currentEdge = new Edge(_currentState, _currentEvent, _currentEvent.Title);
-            _edges.Add(_currentEdge);
-        }
-
         public void Visit(IStateMachineActivity activity)
         {
             Visit(activity, x =>
@@ -87,7 +77,7 @@
         }
 
         public void Visit<T>(IBehavior<T> behavior)
-            where T : class, ISaga
+            where T : class, SagaStateMachineInstance
         {
             Visit(behavior, x =>
             {
@@ -95,13 +85,13 @@
         }
 
         public void Visit<T>(IBehavior<T> behavior, Action<IBehavior<T>> next)
-            where T : class, ISaga
+            where T : class, SagaStateMachineInstance
         {
             next(behavior);
         }
 
         public void Visit<T, TData>(IBehavior<T, TData> behavior)
-            where T : class, ISaga
+            where T : class, SagaStateMachineInstance
             where TData : class
         {
             Visit(behavior, x =>
@@ -110,7 +100,7 @@
         }
 
         public void Visit<T, TData>(IBehavior<T, TData> behavior, Action<IBehavior<T, TData>> next)
-            where T : class, ISaga
+            where T : class, SagaStateMachineInstance
             where TData : class
         {
             next(behavior);
@@ -133,7 +123,7 @@
             }
 
             var activityType = activity.GetType();
-            var compensateType = activityType.GetTypeInfo().IsGenericType
+            var compensateType = activityType.IsGenericType
                 && activityType.GetGenericTypeDefinition() == typeof(CatchFaultActivity<,>)
                     ? activityType.GetGenericArguments().Skip(1).First()
                     : null;
@@ -157,6 +147,15 @@
             }
 
             next(activity);
+        }
+
+        void AddCurrentEdge()
+        {
+            if (_currentEvent.IsComposite || _currentEdge != null)
+                return;
+
+            _currentEdge = new Edge(_currentState, _currentEvent, _currentEvent.Title);
+            _edges.Add(_currentEdge);
         }
 
         void InspectTransitionActivity(TransitionActivity<TSaga> transitionActivity)
@@ -209,7 +208,7 @@
             var targetType = @event
                 .GetType()
                 .GetInterfaces()
-                .Where(x => x.GetTypeInfo().IsGenericType)
+                .Where(x => x.IsGenericType)
                 .Where(x => x.GetGenericTypeDefinition() == typeof(Event<>))
                 .Select(x => x.GetGenericArguments()[0])
                 .DefaultIfEmpty(typeof(Event))

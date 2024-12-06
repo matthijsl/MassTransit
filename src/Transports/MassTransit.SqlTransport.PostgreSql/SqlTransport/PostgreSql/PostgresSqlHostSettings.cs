@@ -1,14 +1,15 @@
 namespace MassTransit.SqlTransport.PostgreSql
 {
     using System;
+    using System.Linq;
     using Configuration;
-    using MassTransit.SqlTransport;
     using Npgsql;
 
 
     public class PostgresSqlHostSettings :
         ConfigurationSqlHostSettings
     {
+        readonly NpgsqlDataSource? _dataSource;
         NpgsqlConnectionStringBuilder? _builder;
 
         public PostgresSqlHostSettings(Uri hostAddress)
@@ -21,22 +22,44 @@ namespace MassTransit.SqlTransport.PostgreSql
             ConnectionString = connectionString;
         }
 
-        public PostgresSqlHostSettings(SqlTransportOptions options)
+        public PostgresSqlHostSettings(NpgsqlDataSource dataSource)
         {
-            Host = options.Host;
-            Database = options.Database;
-            Username = options.Username;
-            Password = options.Password;
-            Schema = options.Schema;
+            if (dataSource == null)
+                throw new ArgumentNullException(nameof(dataSource));
 
-            if (options.Port.HasValue)
-                Port = options.Port.Value;
+            _dataSource = dataSource;
+
+            IsProvidedDataSource = true;
+
+            ConnectionString = dataSource.ConnectionString;
         }
 
-        public string? Role { get; set; }
+        public PostgresSqlHostSettings(SqlTransportOptions options)
+        {
+            var builder = PostgresSqlTransportConnection.CreateBuilder(options);
 
-        public string? AdminUsername { get; set; }
-        public string? AdminPassword { get; set; }
+            ParseHost(builder.Host);
+            if (builder.Port > 0 && builder.Port != NpgsqlConnection.DefaultPort)
+                Port = options.Port;
+
+            Database = builder.Database;
+            Schema = options.Schema;
+
+            Username = builder.Username;
+            Password = builder.Password;
+
+            _builder = builder;
+
+            if (options.ConnectionLimit.HasValue)
+                ConnectionLimit = options.ConnectionLimit.Value;
+        }
+
+        public string? MultipleHosts { get; set; }
+
+        /// <summary>
+        /// If true, the data source was provided by the developer and should not be disposed
+        /// </summary>
+        public bool IsProvidedDataSource { get; private set; }
 
         public string? ConnectionString
         {
@@ -44,17 +67,38 @@ namespace MassTransit.SqlTransport.PostgreSql
             {
                 var builder = new NpgsqlConnectionStringBuilder(value);
 
-                Host = builder.Host;
-                if (builder.Port > 0)
+                ParseHost(builder.Host);
+                if (builder.Port > 0 && builder.Port != NpgsqlConnection.DefaultPort)
                     Port = builder.Port;
+
+                Database = builder.Database;
 
                 Username = builder.Username;
                 Password = builder.Password;
 
-                Database = builder.Database;
+                Schema = builder.SearchPath ?? "transport";
 
                 _builder = builder;
             }
+        }
+
+        public NpgsqlDataSource GetDataSource()
+        {
+            if (_dataSource != null)
+                return _dataSource;
+
+            var builder = _builder ??= new NpgsqlConnectionStringBuilder
+            {
+                Host = MultipleHosts ?? Host,
+                Username = Username,
+                Password = Password,
+                Database = Database
+            };
+
+            if (Port.HasValue && Port.Value != NpgsqlConnection.DefaultPort)
+                builder.Port = Port.Value;
+
+            return NpgsqlDataSource.Create(builder);
         }
 
         public override ConnectionContextFactory CreateConnectionContextFactory(ISqlHostConfiguration hostConfiguration)
@@ -62,20 +106,27 @@ namespace MassTransit.SqlTransport.PostgreSql
             return new PostgresConnectionContextFactory(hostConfiguration);
         }
 
-        public string GetConnectionString()
+        void ParseHost(string? host)
         {
-            var builder = _builder ??= new NpgsqlConnectionStringBuilder
+            var hostSegments = host?.Split(',');
+            if (hostSegments?.Length > 1)
             {
-                Host = Host,
-                Username = Username,
-                Password = Password,
-                Database = Database
-            };
+                Host = hostSegments[0].Split(':').First().Trim();
+                MultipleHosts = host!.Trim();
+            }
+            else
+            {
+                var segments = host?.Split(':');
+                if (segments?.Length == 1)
+                    Host = segments[0].Trim();
+                else if (segments?.Length == 2)
+                {
+                    Host = segments[0].Trim();
 
-            if (Port.HasValue)
-                builder.Port = Port.Value;
-
-            return builder.ToString();
+                    if (int.TryParse(segments[1], out var port) && port != 0 && port != NpgsqlConnection.DefaultPort)
+                        Port = port;
+                }
+            }
         }
     }
 }

@@ -7,7 +7,6 @@ namespace MassTransit.SqlTransport
     using Microsoft.Extensions.Options;
 
 
-    // TODO use named registration to resolve this one
     public class SqlTransportMigrationHostedService :
         IHostedService
     {
@@ -29,9 +28,23 @@ namespace MassTransit.SqlTransport
         {
             if (_options.CreateDatabase)
             {
-                _logger.LogInformation("MassTransit DbTransport creating PostgreSQL database {Database}", _transportOptions.Database);
+                _logger.LogInformation("MassTransit SQL Transport creating database {Database}", _transportOptions.Database);
 
                 await _migrator.CreateDatabase(_transportOptions, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (_options.CreateSchema)
+            {
+                _logger.LogInformation("MassTransit SQL Transport creating schema for database {Database}", _transportOptions.Database);
+
+                await _migrator.CreateSchemaIfNotExist(_transportOptions, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (_options.CreateInfrastructure)
+            {
+                _logger.LogInformation("MassTransit SQL Transport creating infrastructure for database {Database}", _transportOptions.Database);
+
+                await _migrator.CreateInfrastructure(_transportOptions, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -39,7 +52,7 @@ namespace MassTransit.SqlTransport
         {
             if (_options.DeleteDatabase)
             {
-                _logger.LogInformation("Deleting PostgreSQL Database {Database}", _transportOptions.Database);
+                _logger.LogInformation("Deleting Database {Database}", _transportOptions.Database);
 
                 await _migrator.DeleteDatabase(_transportOptions, cancellationToken).ConfigureAwait(false);
             }

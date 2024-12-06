@@ -2,7 +2,6 @@ namespace MassTransit.Metadata
 {
     using System;
     using System.Linq;
-    using System.Reflection;
     using Internals;
 
 
@@ -15,11 +14,24 @@ namespace MassTransit.Metadata
         /// <returns></returns>
         public static bool IsConsumerOrDefinition(Type type)
         {
-            Type[] interfaces = type.GetTypeInfo().GetInterfaces();
+            Type[] interfaces = type.GetInterfaces();
 
-            return interfaces.Any(t => InterfaceExtensions.HasInterface(t, typeof(IConsumer<>))
-                || InterfaceExtensions.HasInterface(t, typeof(IJobConsumer<>))
-                || InterfaceExtensions.HasInterface(t, typeof(IConsumerDefinition<>)));
+            return !IsSaga(type) && interfaces.Any(t => t.HasInterface(typeof(IConsumer<>))
+                || t.HasInterface(typeof(IJobConsumer<>))
+                || t.HasInterface(typeof(IConsumerDefinition<>)));
+        }
+
+        /// <summary>
+        /// Returns true if the type is a consumer, or a consumer definition
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static bool IsConsumer(Type type)
+        {
+            Type[] interfaces = type.GetInterfaces();
+
+            return interfaces.Any(t => t.HasInterface(typeof(IConsumer<>))
+                || t.HasInterface(typeof(IJobConsumer<>)));
         }
 
         /// <summary>
@@ -29,7 +41,7 @@ namespace MassTransit.Metadata
         /// <returns></returns>
         public static bool IsSagaOrDefinition(Type type)
         {
-            Type[] interfaces = type.GetTypeInfo().GetInterfaces();
+            Type[] interfaces = type.GetInterfaces();
 
             if (interfaces.Contains(typeof(ISaga)))
                 return true;
@@ -42,13 +54,31 @@ namespace MassTransit.Metadata
         }
 
         /// <summary>
+        /// Returns true if the type is a saga
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static bool IsSaga(Type type)
+        {
+            Type[] interfaces = type.GetInterfaces();
+
+            if (interfaces.Contains(typeof(ISaga)))
+                return true;
+
+            return interfaces.Any(t => t.HasInterface(typeof(InitiatedBy<>))
+                || t.HasInterface(typeof(Orchestrates<>))
+                || t.HasInterface(typeof(InitiatedByOrOrchestrates<>))
+                || t.HasInterface(typeof(Observes<,>)));
+        }
+
+        /// <summary>
         /// Returns true if the type is a state machine or saga definition
         /// </summary>
         /// <param name="type"></param>
         /// <returns></returns>
         public static bool IsSagaStateMachineOrDefinition(Type type)
         {
-            Type[] interfaces = type.GetTypeInfo().GetInterfaces();
+            Type[] interfaces = type.GetInterfaces();
 
             return interfaces.Any(t => t.HasInterface(typeof(SagaStateMachine<>))
                 || t.HasInterface(typeof(ISagaDefinition<>)));
@@ -61,7 +91,7 @@ namespace MassTransit.Metadata
         /// <returns></returns>
         public static bool IsActivityOrDefinition(Type type)
         {
-            Type[] interfaces = type.GetTypeInfo().GetInterfaces();
+            Type[] interfaces = type.GetInterfaces();
 
             return interfaces.Any(t => t.HasInterface(typeof(IExecuteActivity<>))
                 || t.HasInterface(typeof(ICompensateActivity<>))
@@ -76,7 +106,7 @@ namespace MassTransit.Metadata
         /// <returns></returns>
         public static bool IsFutureOrDefinition(Type type)
         {
-            Type[] interfaces = type.GetTypeInfo().GetInterfaces();
+            Type[] interfaces = type.GetInterfaces();
 
             return interfaces.Any(t => t.HasInterface(typeof(SagaStateMachine<FutureState>))
                 || t.HasInterface(typeof(IFutureDefinition<>)));

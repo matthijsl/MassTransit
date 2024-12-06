@@ -56,7 +56,7 @@ namespace MassTransit.SqlTransport
             return _context.Send(queueName, context);
         }
 
-        public Task<IEnumerable<MessageDelivery>> Publish<T>(string topicName, SqlMessageSendContext<T> context)
+        public Task Publish<T>(string topicName, SqlMessageSendContext<T> context)
             where T : class
         {
             return _context.Publish(topicName, context);
@@ -72,9 +72,15 @@ namespace MassTransit.SqlTransport
             return _context.Unlock(lockId, messageDeliveryId, delay, sendHeaders);
         }
 
-        public Task<IEnumerable<SqlTransportMessage>> ReceiveMessages(string queueName, SqlReceiveMode mode, int messageLimit, TimeSpan lockDuration)
+        public Task<IEnumerable<SqlTransportMessage>> ReceiveMessages(string queueName, SqlReceiveMode mode, int messageLimit, int concurrentLimit,
+            TimeSpan lockDuration)
         {
-            return _context.ReceiveMessages(queueName, mode, messageLimit, lockDuration);
+            return _context.ReceiveMessages(queueName, mode, messageLimit, concurrentLimit, lockDuration);
+        }
+
+        public Task TouchQueue(string queueName)
+        {
+            return _context.TouchQueue(queueName);
         }
 
         public Task<bool> DeleteMessage(Guid lockId, long messageDeliveryId)
@@ -82,9 +88,9 @@ namespace MassTransit.SqlTransport
             return _context.DeleteMessage(lockId, messageDeliveryId);
         }
 
-        public Task<bool> DeleteScheduledMessage(Guid tokenId)
+        public Task<bool> DeleteScheduledMessage(Guid tokenId, CancellationToken cancellationToken)
         {
-            return _context.DeleteScheduledMessage(tokenId);
+            return _context.DeleteScheduledMessage(tokenId, cancellationToken);
         }
 
         public Task<bool> MoveMessage(Guid lockId, long messageDeliveryId, string queueName, SqlQueueType queueType, SendHeaders sendHeaders)

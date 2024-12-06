@@ -10,7 +10,7 @@ namespace MassTransit.SagaStateMachine
     /// <typeparam name="TMessage"></typeparam>
     public class SlimActivity<TSaga, TMessage> :
         IStateMachineActivity<TSaga, TMessage>
-        where TSaga : class, ISaga
+        where TSaga : class, SagaStateMachineInstance
         where TMessage : class
     {
         readonly IStateMachineActivity<TSaga> _activity;
@@ -35,7 +35,8 @@ namespace MassTransit.SagaStateMachine
             return _activity.Execute(context, new WidenBehavior<TSaga, TMessage>(behavior, context));
         }
 
-        Task IStateMachineActivity<TSaga, TMessage>.Faulted<TException>(BehaviorExceptionContext<TSaga, TMessage, TException> context, IBehavior<TSaga, TMessage> next)
+        Task IStateMachineActivity<TSaga, TMessage>.Faulted<TException>(BehaviorExceptionContext<TSaga, TMessage, TException> context,
+            IBehavior<TSaga, TMessage> next)
         {
             return _activity.Faulted(context, next);
         }

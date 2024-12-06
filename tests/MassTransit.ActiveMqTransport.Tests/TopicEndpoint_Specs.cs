@@ -13,8 +13,8 @@ namespace MassTransit.ActiveMqTransport.Tests
         [Test]
         public async Task Should_succeed()
         {
-            var endpoint = await Bus.GetSendEndpoint(new Uri("topic:VirtualTopic.private"));
-            await endpoint.Send(new PrivateMessage {Value = "Hello"});
+            var endpoint = await Bus.GetSendEndpoint(new Uri("topic:private"));
+            await endpoint.Send(new PrivateMessage { Value = "Hello" });
 
             ConsumeContext<PrivateMessage> context = await _handler;
 
@@ -27,7 +27,7 @@ namespace MassTransit.ActiveMqTransport.Tests
         {
             configurator.ConfigureConsumeTopology = false;
 
-            configurator.Bind("VirtualTopic.private");
+            configurator.Bind("private");
 
             _handler = Handled<PrivateMessage>(configurator);
 

@@ -18,13 +18,13 @@
             await InputQueueSendEndpoint.Send(message);
 
             Guid? saga = await _repository.ShouldContainSagaInState(message.CorrelationId, _machine, x => x.WaitingToStart, TestTimeout);
-            Assert.IsTrue(saga.HasValue);
+            Assert.That(saga.HasValue, Is.True);
 
             await InputQueueSendEndpoint.Send(new Start(message.CorrelationId));
 
             saga = await _repository.ShouldContainSagaInState(message.CorrelationId, _machine, x => x.FailedToStart, TestTimeout);
 
-            Assert.IsTrue(saga.HasValue);
+            Assert.That(saga.HasValue, Is.True);
         }
 
         [Test]
@@ -39,7 +39,7 @@
 
             ConsumeContext<Fault<Start>> fault = await faultReceived;
 
-            Assert.AreEqual(message.CorrelationId, fault.Message.Message.CorrelationId);
+            Assert.That(fault.Message.Message.CorrelationId, Is.EqualTo(message.CorrelationId));
         }
 
         [Test]
@@ -58,11 +58,11 @@
 
             ConsumeContext<Fault<Start>> fault = await faultReceived;
 
-            Assert.AreEqual(message.CorrelationId, fault.Message.Message.CorrelationId);
+            Assert.That(fault.Message.Message.CorrelationId, Is.EqualTo(message.CorrelationId));
 
             saga = await _repository.ShouldContainSagaInState(message.CorrelationId, _machine, x => x.FailedToStart, TestTimeout);
 
-            Assert.IsTrue(saga.HasValue);
+            Assert.That(saga.HasValue, Is.True);
         }
 
         [Test]
@@ -77,7 +77,7 @@
 
             ConsumeContext<Fault<Stop>> fault = await faultReceived;
 
-            Assert.AreEqual(message.CorrelationId, fault.Message.Message.CorrelationId);
+            Assert.That(fault.Message.Message.CorrelationId, Is.EqualTo(message.CorrelationId));
         }
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)

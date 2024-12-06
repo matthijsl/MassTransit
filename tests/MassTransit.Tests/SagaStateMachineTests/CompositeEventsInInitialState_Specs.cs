@@ -18,14 +18,14 @@
             var firstMessage = new FirstMessage(correlationId);
             var secondMessage = new SecondMessage(correlationId);
 
+            Task<ConsumeContext<CompleteMessage>> received =
+                await ConnectPublishHandler<CompleteMessage>(x => x.Message.CorrelationId == correlationId);
+
             await InputQueueSendEndpoint.Send(firstMessage);
             await InputQueueSendEndpoint.Send(secondMessage);
 
             Guid? saga = await _repository.ShouldContainSaga(x => x.CorrelationId == correlationId, TestTimeout);
-            Assert.IsTrue(saga.HasValue);
-
-            Task<ConsumeContext<CompleteMessage>> received =
-                await ConnectPublishHandler<CompleteMessage>(x => x.Message.CorrelationId == correlationId);
+            Assert.That(saga.HasValue, Is.True);
 
             await received;
         }

@@ -2,7 +2,6 @@
 {
     using System;
     using System.Diagnostics.CodeAnalysis;
-    using System.Reflection;
     using System.Threading;
     using System.Threading.Tasks;
     using Payloads;
@@ -127,6 +126,18 @@
         public virtual Task NotifyFaulted(TimeSpan duration, string consumerType, Exception exception)
         {
             return NotifyFaulted(this, duration, consumerType, exception);
+        }
+
+        public void Method1()
+        {
+        }
+
+        public void Method2()
+        {
+        }
+
+        public void Method3()
+        {
         }
     }
 }

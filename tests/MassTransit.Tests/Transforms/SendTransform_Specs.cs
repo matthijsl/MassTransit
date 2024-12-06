@@ -12,15 +12,20 @@
         [Test]
         public async Task Should_not_affect_published_messages()
         {
-            await Bus.Publish(new A {First = "Hello"});
+            await Bus.Publish(new A { First = "Hello" });
 
             ConsumeContext<A> result = await _received;
 
-            Assert.That(result.Message.First, Is.EqualTo("Hello"));
-            Assert.That(result.Message.Second, Is.Null);
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Message.First, Is.EqualTo("Hello"));
+                Assert.That(result.Message.Second, Is.Null);
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<A>> _received;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryBus(IInMemoryBusFactoryConfigurator configurator)
         {
@@ -54,15 +59,20 @@
         [Test]
         public async Task Should_change_the_property()
         {
-            await InputQueueSendEndpoint.Send(new A {First = "Hello"});
+            await InputQueueSendEndpoint.Send(new A { First = "Hello" });
 
             ConsumeContext<A> result = await _received;
 
-            Assert.That(result.Message.First, Is.EqualTo("Hello"));
-            Assert.That(result.Message.Second, Is.EqualTo("World"));
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Message.First, Is.EqualTo("Hello"));
+                Assert.That(result.Message.Second, Is.EqualTo("World"));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<A>> _received;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryBus(IInMemoryBusFactoryConfigurator configurator)
         {
@@ -96,15 +106,20 @@
         [Test]
         public async Task Should_transform_on_publish()
         {
-            await Bus.Publish(new A {First = "Hello"});
+            await Bus.Publish(new A { First = "Hello" });
 
             ConsumeContext<A> result = await _received;
 
-            Assert.That(result.Message.First, Is.EqualTo("Hello"));
-            Assert.That(result.Message.Second, Is.EqualTo("World"));
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Message.First, Is.EqualTo("Hello"));
+                Assert.That(result.Message.Second, Is.EqualTo("World"));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<A>> _received;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryBus(IInMemoryBusFactoryConfigurator configurator)
         {
@@ -138,15 +153,20 @@
         [Test]
         public async Task Should_not_transform_on_send()
         {
-            await InputQueueSendEndpoint.Send(new A {First = "Hello"});
+            await InputQueueSendEndpoint.Send(new A { First = "Hello" });
 
             ConsumeContext<A> result = await _received;
 
-            Assert.That(result.Message.First, Is.EqualTo("Hello"));
-            Assert.That(result.Message.Second, Is.Null);
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Message.First, Is.EqualTo("Hello"));
+                Assert.That(result.Message.Second, Is.Null);
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<A>> _received;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryBus(IInMemoryBusFactoryConfigurator configurator)
         {

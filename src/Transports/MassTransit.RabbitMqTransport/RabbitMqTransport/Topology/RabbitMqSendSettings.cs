@@ -11,7 +11,7 @@ namespace MassTransit.RabbitMqTransport.Topology
         RabbitMqExchangeConfigurator,
         SendSettings
     {
-        readonly IList<ExchangeBindingPublishTopologySpecification> _exchangeBindings;
+        readonly List<ExchangeBindingPublishTopologySpecification> _exchangeBindings;
         bool _bindToQueue;
         string _queueName;
 
@@ -85,6 +85,14 @@ namespace MassTransit.RabbitMqTransport.Topology
             var specification = new ExchangeBindingPublishTopologySpecification(exchangeName, exchangeType, Durable, AutoDelete);
 
             configure?.Invoke(specification);
+
+            _exchangeBindings.Add(specification);
+        }
+
+        public void BindToExchange(RabbitMqEndpointAddress address)
+        {
+            string exchangeType = ExchangeArguments.TryGetValue("x-delayed-type", out var argument) ? (string)argument : RabbitMQ.Client.ExchangeType.Fanout;
+            var specification = new ExchangeBindingPublishTopologySpecification(address.Name, address.ExchangeType, address.Durable, address.AutoDelete);
 
             _exchangeBindings.Add(specification);
         }

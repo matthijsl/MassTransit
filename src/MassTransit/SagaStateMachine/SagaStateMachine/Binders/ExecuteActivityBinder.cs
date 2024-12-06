@@ -6,16 +6,17 @@ namespace MassTransit.SagaStateMachine
     /// <typeparam name="TInstance"></typeparam>
     public class ExecuteActivityBinder<TInstance> :
         IActivityBinder<TInstance>
-        where TInstance : class, ISaga
+        where TInstance : class, SagaStateMachineInstance
     {
         readonly IStateMachineActivity<TInstance> _activity;
-        public Event Event { get; }
 
         public ExecuteActivityBinder(Event @event, IStateMachineActivity<TInstance> activity)
         {
             Event = @event;
             _activity = activity;
         }
+
+        public Event Event { get; }
 
         public bool IsStateTransitionEvent(State state)
         {

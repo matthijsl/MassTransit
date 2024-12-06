@@ -24,6 +24,7 @@ namespace MassTransit.Configuration
             _configureSchema = configureSchema;
         }
 
+        [Obsolete("Use AddMarten to configure the connection. Visit https://masstransit.io/obsolete for details.")]
         public void Connection(string connectionString, Action<StoreOptions> configure = null)
         {
             void ConfigureOptions(StoreOptions options)
@@ -36,6 +37,7 @@ namespace MassTransit.Configuration
             _configureMarten = ConfigureOptions;
         }
 
+        [Obsolete("Use AddMarten to configure the connection. Visit https://masstransit.io/obsolete for details.")]
         public void Connection(Func<NpgsqlConnection> connectionFactory, Action<StoreOptions> configure = null)
         {
             void ConfigureOptions(StoreOptions options)
@@ -53,8 +55,7 @@ namespace MassTransit.Configuration
             yield break;
         }
 
-        public void Register<T>(ISagaRepositoryRegistrationConfigurator<T> configurator)
-            where T : class, ISaga
+        public void Register(ISagaRepositoryRegistrationConfigurator<TSaga> configurator)
         {
             if (_configureMarten != null)
             {
@@ -65,9 +66,10 @@ namespace MassTransit.Configuration
             }
 
             configurator.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureMarten, MartenSagaRepositoryStoreOptionsConfigurator>(Factory));
-            configurator.RegisterLoadSagaRepository<T, MartenSagaRepositoryContextFactory<T>>();
-            configurator.RegisterQuerySagaRepository<T, MartenSagaRepositoryContextFactory<T>>();
-            configurator.RegisterSagaRepository<T, IDocumentSession, SagaConsumeContextFactory<IDocumentSession, T>, MartenSagaRepositoryContextFactory<T>>();
+            configurator.RegisterLoadSagaRepository<TSaga, MartenSagaRepositoryContextFactory<TSaga>>();
+            configurator.RegisterQuerySagaRepository<TSaga, MartenSagaRepositoryContextFactory<TSaga>>();
+            configurator.RegisterSagaRepository<TSaga, IDocumentSession, SagaConsumeContextFactory<IDocumentSession, TSaga>,
+                MartenSagaRepositoryContextFactory<TSaga>>();
         }
 
         MartenSagaRepositoryStoreOptionsConfigurator Factory(IServiceProvider provider)

@@ -22,7 +22,9 @@ namespace MassTransit.Configuration
         protected override void ConfigureSaga(IReceiveEndpointConfigurator configurator, ISagaConfigurator<JobAttemptSaga> sagaConfigurator,
             IRegistrationContext context)
         {
-            configurator.UseMessageRetry(r => r.Intervals(100, 1000, 2000, 5000));
+            configurator.UseMessageRetry(r => r.Intervals(100, 500, 1000, 1000, 2000, 2000, 5000, 5000));
+
+            configurator.UseMessageScope(context);
 
             configurator.UseInMemoryOutbox(context);
 
@@ -33,6 +35,8 @@ namespace MassTransit.Configuration
                 var partition = new Partitioner(_options.ConcurrentMessageLimit.Value, new Murmur3UnsafeHashGenerator());
 
                 configurator.UsePartitioner<StartJobAttempt>(partition, p => p.Message.AttemptId);
+                configurator.UsePartitioner<FinalizeJobAttempt>(partition, p => p.Message.AttemptId);
+                configurator.UsePartitioner<CancelJobAttempt>(partition, p => p.Message.AttemptId);
                 configurator.UsePartitioner<Fault<StartJob>>(partition, p => p.Message.Message.AttemptId);
 
                 configurator.UsePartitioner<JobAttemptStarted>(partition, p => p.Message.AttemptId);

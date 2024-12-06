@@ -25,18 +25,26 @@ namespace MassTransit.Tests.Serialization
 
             ConsumeContext<Command> handled = await _handled;
 
-            Assert.That(handled.Message.CommandId, Is.EqualTo(message.CommandId));
-            Assert.That(handled.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
+            Assert.Multiple(() =>
+            {
+                Assert.That(handled.Message.CommandId, Is.EqualTo(message.CommandId));
+                Assert.That(handled.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
+            });
 
             ConsumeContext<BagOfCrap> forwarded = await _forwarded;
 
-            Assert.That(forwarded.Message.CommandId, Is.EqualTo(message.CommandId));
-            Assert.That(forwarded.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
-            Assert.That(forwarded.Message.Crap, Is.EqualTo("All"));
-            Assert.That(forwarded.ReceiveContext.ContentType.MediaType, Is.EqualTo(NewtonsoftJsonMessageSerializer.ContentTypeHeaderValue));
+            Assert.Multiple(() =>
+            {
+                Assert.That(forwarded.Message.CommandId, Is.EqualTo(message.CommandId));
+                Assert.That(forwarded.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
+                Assert.That(forwarded.Message.Crap, Is.EqualTo("All"));
+                Assert.That(forwarded.ReceiveContext.ContentType.MediaType, Is.EqualTo(NewtonsoftJsonMessageSerializer.ContentTypeHeaderValue));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<Command>> _handled;
+        #pragma warning restore NUnit1032
         Task<ConsumeContext<BagOfCrap>> _forwarded;
 
         protected override void ConfigureInMemoryBus(IInMemoryBusFactoryConfigurator configurator)
@@ -90,18 +98,26 @@ namespace MassTransit.Tests.Serialization
 
             ConsumeContext<Command> handled = await _handled;
 
-            Assert.That(handled.Message.CommandId, Is.EqualTo(message.CommandId));
-            Assert.That(handled.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
+            Assert.Multiple(() =>
+            {
+                Assert.That(handled.Message.CommandId, Is.EqualTo(message.CommandId));
+                Assert.That(handled.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
+            });
 
             ConsumeContext<BagOfCrap> forwarded = await _forwarded;
 
-            Assert.That(forwarded.Message.CommandId, Is.EqualTo(message.CommandId));
-            Assert.That(forwarded.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
-            Assert.That(forwarded.Message.Crap, Is.EqualTo("All"));
-            Assert.That(forwarded.ReceiveContext.ContentType.MediaType, Is.EqualTo(NewtonsoftJsonMessageSerializer.ContentTypeHeaderValue));
+            Assert.Multiple(() =>
+            {
+                Assert.That(forwarded.Message.CommandId, Is.EqualTo(message.CommandId));
+                Assert.That(forwarded.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
+                Assert.That(forwarded.Message.Crap, Is.EqualTo("All"));
+                Assert.That(forwarded.ReceiveContext.ContentType.MediaType, Is.EqualTo(NewtonsoftJsonMessageSerializer.ContentTypeHeaderValue));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<Command>> _handled;
+        #pragma warning restore NUnit1032
         Task<ConsumeContext<BagOfCrap>> _forwarded;
 
         protected override void ConfigureInMemoryBus(IInMemoryBusFactoryConfigurator configurator)
@@ -155,18 +171,26 @@ namespace MassTransit.Tests.Serialization
 
             ConsumeContext<Command> handled = await _handled;
 
-            Assert.That(handled.Message.CommandId, Is.EqualTo(message.CommandId));
-            Assert.That(handled.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
+            Assert.Multiple(() =>
+            {
+                Assert.That(handled.Message.CommandId, Is.EqualTo(message.CommandId));
+                Assert.That(handled.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
+            });
 
             ConsumeContext<BagOfCrap> forwarded = await _forwarded;
 
-            Assert.That(forwarded.Message.CommandId, Is.EqualTo(message.CommandId));
-            Assert.That(forwarded.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
-            Assert.That(forwarded.Message.Crap, Is.EqualTo("All"));
-            Assert.That(forwarded.ReceiveContext.ContentType.MediaType, Is.EqualTo(NewtonsoftXmlMessageSerializer.ContentTypeHeaderValue));
+            Assert.Multiple(() =>
+            {
+                Assert.That(forwarded.Message.CommandId, Is.EqualTo(message.CommandId));
+                Assert.That(forwarded.Message.ItemNumber, Is.EqualTo(message.ItemNumber));
+                Assert.That(forwarded.Message.Crap, Is.EqualTo("All"));
+                Assert.That(forwarded.ReceiveContext.ContentType.MediaType, Is.EqualTo(NewtonsoftXmlMessageSerializer.ContentTypeHeaderValue));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<Command>> _handled;
+        #pragma warning restore NUnit1032
         Task<ConsumeContext<BagOfCrap>> _forwarded;
 
         protected override void ConfigureInMemoryBus(IInMemoryBusFactoryConfigurator configurator)

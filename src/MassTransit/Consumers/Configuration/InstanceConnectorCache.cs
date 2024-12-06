@@ -2,7 +2,6 @@
 {
     using System;
     using System.Collections.Concurrent;
-    using System.Threading;
 
 
     public class InstanceConnectorCache<T> :
@@ -13,8 +12,7 @@
 
         InstanceConnectorCache()
         {
-            _connector = new Lazy<InstanceConnector<T>>(() => new InstanceConnector<T>(),
-                LazyThreadSafetyMode.PublicationOnly);
+            _connector = new Lazy<InstanceConnector<T>>(() => new InstanceConnector<T>());
         }
 
         public static IInstanceConnector Connector => InstanceCache.Cached.Value.Connector;
@@ -24,8 +22,7 @@
 
         static class InstanceCache
         {
-            internal static readonly Lazy<IInstanceConnectorCache<T>> Cached = new Lazy<IInstanceConnectorCache<T>>(
-                () => new InstanceConnectorCache<T>(), LazyThreadSafetyMode.PublicationOnly);
+            internal static readonly Lazy<IInstanceConnectorCache<T>> Cached = new Lazy<IInstanceConnectorCache<T>>(() => new InstanceConnectorCache<T>());
         }
     }
 
@@ -49,8 +46,7 @@
         static class InstanceCache
         {
             internal static readonly Lazy<ConcurrentDictionary<Type, Lazy<IInstanceConnector>>> Cached =
-                new Lazy<ConcurrentDictionary<Type, Lazy<IInstanceConnector>>>(
-                    () => new ConcurrentDictionary<Type, Lazy<IInstanceConnector>>(), LazyThreadSafetyMode.PublicationOnly);
+                new Lazy<ConcurrentDictionary<Type, Lazy<IInstanceConnector>>>(() => new ConcurrentDictionary<Type, Lazy<IInstanceConnector>>());
         }
     }
 }

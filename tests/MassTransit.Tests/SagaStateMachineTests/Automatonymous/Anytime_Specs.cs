@@ -16,8 +16,11 @@
             await _machine.RaiseEvent(instance, x => x.Init);
             await _machine.RaiseEvent(instance, x => x.Hello);
 
-            Assert.IsTrue(instance.HelloCalled);
-            Assert.AreEqual(_machine.Final, instance.CurrentState);
+            Assert.Multiple(() =>
+            {
+                Assert.That(instance.HelloCalled, Is.True);
+                Assert.That(instance.CurrentState, Is.EqualTo(_machine.Final));
+            });
         }
 
         [Test]
@@ -26,13 +29,13 @@
             var instance = new Instance();
 
             await _machine.RaiseEvent(instance, x => x.Init);
-            await _machine.RaiseEvent(instance, x => x.EventA, new A
-            {
-                Value = "Test"
-            });
+            await _machine.RaiseEvent(instance, x => x.EventA, new A { Value = "Test" });
 
-            Assert.AreEqual("Test", instance.AValue);
-            Assert.AreEqual(_machine.Final, instance.CurrentState);
+            Assert.Multiple(() =>
+            {
+                Assert.That(instance.AValue, Is.EqualTo("Test"));
+                Assert.That(instance.CurrentState, Is.EqualTo(_machine.Final));
+            });
         }
 
         [Test]
@@ -42,8 +45,11 @@
 
             Assert.That(async () => await _machine.RaiseEvent(instance, x => x.Hello), Throws.TypeOf<UnhandledEventException>());
 
-            Assert.IsFalse(instance.HelloCalled);
-            Assert.AreEqual(_machine.Initial, instance.CurrentState);
+            Assert.Multiple(() =>
+            {
+                Assert.That(instance.HelloCalled, Is.False);
+                Assert.That(instance.CurrentState, Is.EqualTo(_machine.Initial));
+            });
         }
 
         TestStateMachine _machine;
@@ -62,12 +68,12 @@
 
 
         class Instance :
-SagaStateMachineInstance
+            SagaStateMachineInstance
         {
-            public Guid CorrelationId { get; set; }
             public bool HelloCalled { get; set; }
             public string AValue { get; set; }
             public State CurrentState { get; set; }
+            public Guid CorrelationId { get; set; }
         }
 
 

@@ -1,6 +1,11 @@
 #nullable enable
 namespace MassTransit
 {
+    using System;
+    using System.Threading.Tasks;
+    using RabbitMQ.Client;
+
+
     public class RabbitMqTestHarnessOptions
     {
         /// <summary>
@@ -18,5 +23,11 @@ namespace MassTransit
         /// If the root virtual host is being used, ensure that the virtual host can be cleaned to avoid accidental destruction
         /// </summary>
         public bool ForceCleanRootVirtualHost { get; set; }
+
+        /// <summary>
+        /// If specified, and create virtual host if not exists is specified, will call this method to apply additional configuration
+        /// to the virtual host after it has been created.
+        /// </summary>
+        public Func<IChannel, Task>? ConfigureVirtualHostCallback { get; set; }
     }
 }

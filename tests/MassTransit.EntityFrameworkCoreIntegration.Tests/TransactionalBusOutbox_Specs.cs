@@ -41,7 +41,7 @@
 
             await using (var dbContext = GetDbContext())
             {
-                Assert.IsFalse(await dbContext.Products.AnyAsync(x => x.Id == product.Id));
+                Assert.That(await dbContext.Products.AnyAsync(x => x.Id == product.Id), Is.False);
             }
         }
 
@@ -71,7 +71,7 @@
 
             await using (var dbContext = GetDbContext())
             {
-                Assert.IsTrue(await dbContext.Products.AnyAsync(x => x.Id == product.Id));
+                Assert.That(await dbContext.Products.AnyAsync(x => x.Id == product.Id), Is.True);
             }
         }
 
@@ -101,11 +101,13 @@
 
             await using (var dbContext = GetDbContext())
             {
-                Assert.IsTrue(await dbContext.Products.AnyAsync(x => x.Id == product.Id));
+                Assert.That(await dbContext.Products.AnyAsync(x => x.Id == product.Id), Is.True);
             }
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<InitiateSimpleSaga>> _received;
+        #pragma warning restore NUnit1032
 
         TransactionOutboxTestsDbContext GetDbContext()
         {

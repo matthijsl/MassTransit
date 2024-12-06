@@ -22,9 +22,12 @@ namespace MassTransit.Tests.MessageData
                 Key = "Hello"
             });
 
-            Assert.That(response.Message.Key, Is.EqualTo("Hello"));
+            await Assert.MultipleAsync(async () =>
+            {
+                Assert.That(response.Message.Key, Is.EqualTo("Hello"));
 
-            Assert.That(await response.Message.Value.Value, Is.Not.Empty);
+                Assert.That(await response.Message.Value.Value, Is.Not.Empty);
+            });
         }
 
         [Test]
@@ -41,8 +44,6 @@ namespace MassTransit.Tests.MessageData
             Assert.That(await response.Message.Value.Value, Is.Not.Empty);
         }
 
-        Task<ConsumeContext<Request>> _received;
-
         protected override void ConfigureInMemoryBus(IInMemoryBusFactoryConfigurator configurator)
         {
             configurator.UseRetry<Response>(r => r.Immediate(1));
@@ -54,7 +55,7 @@ namespace MassTransit.Tests.MessageData
         {
             configurator.UseMessageRetry(r => r.None());
 
-            _received = Handler<Request>(configurator, async context =>
+            _ = Handler<Request>(configurator, async context =>
             {
                 await context.RespondAsync<Response>(new
                 {

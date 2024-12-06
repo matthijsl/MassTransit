@@ -2,6 +2,7 @@ namespace MassTransit
 {
     using System;
     using Internals;
+    using Metadata;
 
 
     public static class RegistrationConfiguratorExtensions
@@ -192,7 +193,7 @@ namespace MassTransit
         public static IConsumerRegistrationConfigurator AddConsumer(this IRegistrationConfigurator configurator, Type consumerType,
             Type consumerDefinitionType = null)
         {
-            if (MessageTypeCache.HasSagaInterfaces(consumerType))
+            if (RegistrationMetadata.IsSaga(consumerType))
                 throw new ArgumentException($"{TypeCache.GetShortName(consumerType)} is a saga, and cannot be registered as a consumer", nameof(consumerType));
 
             var register = (IRegisterConsumer)Activator.CreateInstance(typeof(RegisterConsumer<>).MakeGenericType(consumerType));

@@ -126,8 +126,11 @@
             Assert.That(async () => await supervisor.Send(pipe), Throws.TypeOf<IntentionalTestException>());
             await supervisor.Send(pipe);
 
-            Assert.That(lastValue, Is.EqualTo("2"));
-            Assert.That(count, Is.EqualTo(3));
+            Assert.Multiple(() =>
+            {
+                Assert.That(lastValue, Is.EqualTo("2"));
+                Assert.That(count, Is.EqualTo(3));
+            });
 
             await supervisor.Stop();
 
@@ -154,8 +157,11 @@
             await supervisor.Send(pipe);
             await supervisor.Send(pipe);
 
-            Assert.That(lastValue, Is.EqualTo("2"));
-            Assert.That(count, Is.EqualTo(3));
+            Assert.Multiple(() =>
+            {
+                Assert.That(lastValue, Is.EqualTo("2"));
+                Assert.That(count, Is.EqualTo(3));
+            });
 
             await supervisor.Stop();
 

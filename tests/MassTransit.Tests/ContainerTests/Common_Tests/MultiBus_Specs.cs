@@ -44,15 +44,21 @@ namespace MassTransit.Tests.ContainerTests.Common_Tests
         [Test]
         public void Should_resolve_bus_declaration()
         {
-            Assert.NotNull(ServiceProvider.GetService<IBusOne>());
-            Assert.NotNull(ServiceProvider.GetService<IBusTwo>());
+            Assert.Multiple(() =>
+            {
+                Assert.That(ServiceProvider.GetService<IBusOne>(), Is.Not.Null);
+                Assert.That(ServiceProvider.GetService<IBusTwo>(), Is.Not.Null);
+            });
         }
 
         [Test]
         public void Should_resolve_bus_instance()
         {
-            Assert.NotNull(ServiceProvider.GetService<IBusInstance<IBusOne>>());
-            Assert.NotNull(ServiceProvider.GetService<IBusInstance<IBusTwo>>());
+            Assert.Multiple(() =>
+            {
+                Assert.That(ServiceProvider.GetService<IBusInstance<IBusOne>>(), Is.Not.Null);
+                Assert.That(ServiceProvider.GetService<IBusInstance<IBusTwo>>(), Is.Not.Null);
+            });
         }
 
         [Test]
@@ -221,9 +227,12 @@ namespace MassTransit.Tests.ContainerTests.Common_Tests
         [Test]
         public async Task Should_configure_endpoints_correctly()
         {
-            Assert.AreEqual(1, _busOneConfigured);
-            Assert.AreEqual(1, _busTwoConfigured);
-            Assert.AreEqual(2, _globalConfigured);
+            Assert.Multiple(() =>
+            {
+                Assert.That(_busOneConfigured, Is.EqualTo(1));
+                Assert.That(_busTwoConfigured, Is.EqualTo(1));
+                Assert.That(_globalConfigured, Is.EqualTo(2));
+            });
         }
 
         protected override IServiceCollection ConfigureServices(IServiceCollection collection)
@@ -259,6 +268,18 @@ namespace MassTransit.Tests.ContainerTests.Common_Tests
             });
         }
 
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            await Task.WhenAll(HostedServices.Select(x => x.StartAsync(InMemoryTestHarness.TestCancellationToken)));
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            await Task.WhenAll(HostedServices.Select(x => x.StopAsync(InMemoryTestHarness.TestCancellationToken)));
+        }
+
 
         class GlobalConfigureReceiveEndpoint :
             IConfigureReceiveEndpoint
@@ -274,19 +295,6 @@ namespace MassTransit.Tests.ContainerTests.Common_Tests
             {
                 _action();
             }
-        }
-
-
-        [OneTimeSetUp]
-        public async Task Setup()
-        {
-            await Task.WhenAll(HostedServices.Select(x => x.StartAsync(InMemoryTestHarness.TestCancellationToken)));
-        }
-
-        [OneTimeTearDown]
-        public async Task TearDown()
-        {
-            await Task.WhenAll(HostedServices.Select(x => x.StopAsync(InMemoryTestHarness.TestCancellationToken)));
         }
 
 
@@ -354,6 +362,50 @@ namespace MassTransit.Tests.ContainerTests.Common_Tests
             IReceivedMessage<OneRequest> consumed = await harness.Consumed.SelectAsync<OneRequest>().FirstOrDefault();
             Assert.That(consumed, Is.Not.Null);
             Assert.That(consumed.Context.SourceAddress, Is.EqualTo(new Uri("loopback://localhost/mediator")));
+        }
+
+        [Test]
+        public async Task Should_receive_in_bus_through_mediator_and_publish_with_different_base_address()
+        {
+            var baseAddress = new Uri($"loopback://localhost/{Guid.NewGuid()}");
+            await using var provider = new ServiceCollection()
+                .AddMediator(baseAddress, cfg => cfg.AddConsumer<MediatorPublishConsumer>())
+                .AddMassTransitTestHarness(cfg => cfg.AddConsumer<BusConsumer>())
+                .BuildServiceProvider(true);
+
+            var harness = provider.GetTestHarness();
+            await harness.Start();
+
+            var mediator = harness.Scope.ServiceProvider.GetRequiredService<IScopedMediator>();
+            await mediator.Send(new Request());
+
+            Assert.That(await harness.Published.Any<OneRequest>(), Is.True);
+
+            IReceivedMessage<OneRequest> consumed = await harness.Consumed.SelectAsync<OneRequest>().FirstOrDefault();
+            Assert.That(consumed, Is.Not.Null);
+            Assert.That(consumed.Context.SourceAddress, Is.EqualTo(new Uri($"{baseAddress}/mediator")));
+        }
+
+        [Test]
+        public async Task Should_receive_in_bus_through_mediator_and_send_with_different_base_address()
+        {
+            var baseAddress = new Uri($"loopback://localhost/{Guid.NewGuid()}");
+            await using var provider = new ServiceCollection()
+                .AddMediator(baseAddress, cfg => cfg.AddConsumer<MediatorSendConsumer>())
+                .AddMassTransitTestHarness(cfg => cfg.AddConsumer<BusConsumer>().Endpoint(x => x.Name = "input-queue"))
+                .BuildServiceProvider(true);
+
+            var harness = provider.GetTestHarness();
+            await harness.Start();
+
+            var mediator = harness.Scope.ServiceProvider.GetRequiredService<IScopedMediator>();
+            await mediator.Send(new Request());
+
+            Assert.That(await harness.Sent.Any<OneRequest>(), Is.True);
+
+            IReceivedMessage<OneRequest> consumed = await harness.Consumed.SelectAsync<OneRequest>().FirstOrDefault();
+            Assert.That(consumed, Is.Not.Null);
+            Assert.That(consumed.Context.SourceAddress, Is.EqualTo(new Uri($"{baseAddress}/mediator")));
         }
 
 

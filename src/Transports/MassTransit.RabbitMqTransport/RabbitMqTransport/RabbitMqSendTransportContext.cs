@@ -18,22 +18,22 @@ namespace MassTransit.RabbitMqTransport
 
     public class RabbitMqSendTransportContext :
         BaseSendTransportContext,
-        SendTransportContext<ModelContext>
+        SendTransportContext<ChannelContext>
     {
         static readonly DateTimeOffsetTypeConverter _dateTimeOffsetConverter = new DateTimeOffsetTypeConverter();
         static readonly DateTimeTypeConverter _dateTimeConverter = new DateTimeTypeConverter();
         readonly ConfigureRabbitMqTopologyFilter<SendSettings> _configureTopologyFilter;
-        readonly IPipe<ModelContext> _delayConfigureTopologyPipe;
+        readonly IPipe<ChannelContext> _delayConfigureTopologyPipe;
         readonly string _delayExchange;
         readonly string _exchange;
 
         readonly IRabbitMqHostConfiguration _hostConfiguration;
-        readonly IModelContextSupervisor _supervisor;
+        readonly IChannelContextSupervisor _supervisor;
 
         public RabbitMqSendTransportContext(IRabbitMqHostConfiguration hostConfiguration, ReceiveEndpointContext receiveEndpointContext,
-            IModelContextSupervisor supervisor,
+            IChannelContextSupervisor supervisor,
             ConfigureRabbitMqTopologyFilter<SendSettings> configureTopologyFilter, string exchange,
-            IPipe<ModelContext> delayConfigureTopologyPipe, string delayExchange)
+            IPipe<ChannelContext> delayConfigureTopologyPipe, string delayExchange)
             : base(hostConfiguration, receiveEndpointContext.Serialization)
         {
             _hostConfiguration = hostConfiguration;
@@ -49,7 +49,7 @@ namespace MassTransit.RabbitMqTransport
         public override string EntityName => _exchange;
         public override string ActivitySystem => "rabbitmq";
 
-        public Task Send(IPipe<ModelContext> pipe, CancellationToken cancellationToken = default)
+        public Task Send(IPipe<ChannelContext> pipe, CancellationToken cancellationToken = default)
         {
             return _hostConfiguration.Retry(() => _supervisor.Send(pipe, cancellationToken), cancellationToken, _supervisor.SendStopping);
         }
@@ -64,15 +64,17 @@ namespace MassTransit.RabbitMqTransport
             return new IAgent[] { _supervisor };
         }
 
-        public async Task<SendContext<T>> CreateSendContext<T>(ModelContext context, T message, IPipe<SendContext<T>> pipe,
+        public async Task<SendContext<T>> CreateSendContext<T>(ChannelContext context, T message, IPipe<SendContext<T>> pipe,
             CancellationToken cancellationToken)
             where T : class
         {
-            var properties = context.Model.CreateBasicProperties();
+            var properties = new BasicProperties();
 
             var sendContext = new RabbitMqMessageSendContext<T>(properties, _exchange, message, cancellationToken);
 
             await pipe.Send(sendContext).ConfigureAwait(false);
+
+            CopyIncomingPropertiesIfPresent(sendContext);
 
             if (sendContext.Exchange.Equals(RabbitMqExchangeNames.ReplyTo) && string.IsNullOrWhiteSpace(sendContext.RoutingKey))
                 throw new TransportException(sendContext.DestinationAddress, "RoutingKey must be specified when sending to reply-to address");
@@ -90,13 +92,15 @@ namespace MassTransit.RabbitMqTransport
 
             await pipe.Send(sendContext).ConfigureAwait(false);
 
+            CopyIncomingPropertiesIfPresent(sendContext);
+
             if (sendContext.Exchange.Equals(RabbitMqExchangeNames.ReplyTo) && string.IsNullOrWhiteSpace(sendContext.RoutingKey))
                 throw new TransportException(sendContext.DestinationAddress, "RoutingKey must be specified when sending to reply-to address");
 
             return sendContext;
         }
 
-        public async Task Send<T>(ModelContext transportContext, SendContext<T> sendContext)
+        public async Task Send<T>(ChannelContext transportContext, SendContext<T> sendContext)
             where T : class
         {
             RabbitMqMessageSendContext<T> context = sendContext as RabbitMqMessageSendContext<T>
@@ -140,8 +144,8 @@ namespace MassTransit.RabbitMqTransport
                     .ToString("F0", CultureInfo.InvariantCulture);
             }
 
-            if (context.RequestId.HasValue && (context.ResponseAddress?.AbsolutePath?.EndsWith(RabbitMqExchangeNames.ReplyTo) ?? false))
-                context.BasicProperties.ReplyTo = RabbitMqExchangeNames.ReplyTo;
+            if (context.RequestId.HasValue && context.ResponseAddress.IsReplyToAddress())
+                context.BasicProperties.ReplyTo ??= RabbitMqExchangeNames.ReplyTo;
 
             var delay = context.Delay?.TotalMilliseconds;
             if (delay > 0 && exchange != "")
@@ -202,19 +206,13 @@ namespace MassTransit.RabbitMqTransport
                 switch (header.Value)
                 {
                     case DateTimeOffset value:
-                        if (_dateTimeOffsetConverter.TryConvert(value, out long result))
-                            dictionary[header.Key] = new AmqpTimestamp(result);
-                        else if (_dateTimeOffsetConverter.TryConvert(value, out string text))
-                            dictionary[header.Key] = text;
-
+                        dictionary.SetAmqpTimestamp(header.Key, value.UtcDateTime);
                         break;
 
                     case DateTime value:
-                        if (_dateTimeConverter.TryConvert(value, out result))
-                            dictionary[header.Key] = new AmqpTimestamp(result);
-                        else if (_dateTimeConverter.TryConvert(value, out string text))
-                            dictionary[header.Key] = text;
-
+                        if (value.Kind == DateTimeKind.Local)
+                            value = value.ToUniversalTime();
+                        dictionary.SetAmqpTimestamp(header.Key, value);
                         break;
 
                     case Guid value:
@@ -248,6 +246,23 @@ namespace MassTransit.RabbitMqTransport
                             dictionary[header.Key] = formatValue.ToString();
                         break;
                 }
+            }
+        }
+
+        static void CopyIncomingPropertiesIfPresent<T>(RabbitMqSendContext<T> context)
+            where T : class
+        {
+            if (context.TryGetPayload<ConsumeContext>(out var consumeContext)
+                && consumeContext.TryGetPayload<RabbitMqBasicConsumeContext>(out var basicConsumeContext))
+            {
+                if (context.BasicProperties.IsPriorityPresent() == false)
+                {
+                    if (basicConsumeContext.Properties.IsPriorityPresent())
+                        context.TrySetPriority(basicConsumeContext.Properties.Priority);
+                }
+
+                if (!string.IsNullOrWhiteSpace(basicConsumeContext.Properties.ReplyTo) && context.ResponseAddress.IsReplyToAddress())
+                    context.BasicProperties.ReplyTo = basicConsumeContext.Properties.ReplyTo;
             }
         }
     }

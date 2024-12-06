@@ -17,22 +17,22 @@
     {
         readonly TaskCompletionSource<DateTime> _completed;
         readonly IPipe<ConsumeContext<Batch<TMessage>>> _consumerPipe;
-        readonly ChannelExecutor _dispatcher;
-        readonly ChannelExecutor _executor;
+        readonly TaskExecutor _dispatcher;
+        readonly TaskExecutor _executor;
         readonly DateTime _firstMessage;
-        readonly SortedDictionary<Guid, ConsumeContext<TMessage>> _messages;
+        readonly Dictionary<Guid, BatchEntry> _messages;
         readonly BatchOptions _options;
         readonly Timer _timer;
         Activity _currentActivity;
         DateTime _lastMessage;
         ILogContext _logContext;
 
-        public BatchConsumer(BatchOptions options, ChannelExecutor executor, ChannelExecutor dispatcher, IPipe<ConsumeContext<Batch<TMessage>>> consumerPipe)
+        public BatchConsumer(BatchOptions options, TaskExecutor executor, TaskExecutor dispatcher, IPipe<ConsumeContext<Batch<TMessage>>> consumerPipe)
         {
             _executor = executor;
             _consumerPipe = consumerPipe;
             _dispatcher = dispatcher;
-            _messages = new SortedDictionary<Guid, ConsumeContext<TMessage>>();
+            _messages = new Dictionary<Guid, BatchEntry>();
             _completed = TaskUtil.GetTask<DateTime>();
             _firstMessage = DateTime.UtcNow;
             _options = options;
@@ -42,11 +42,15 @@
 
         public bool IsCompleted { get; private set; }
 
-        async Task IConsumer<TMessage>.Consume(ConsumeContext<TMessage> context)
+        public async Task Consume(ConsumeContext<TMessage> context)
         {
             try
             {
                 await _completed.Task.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(context.CancellationToken);
             }
             catch
             {
@@ -83,7 +87,19 @@
                 _currentActivity = currentActivity;
 
             var messageId = context.MessageId ?? NewId.NextGuid();
-            _messages.Add(messageId, context);
+
+            ulong? sequenceNumber = context.ReceiveContext.TryGetPayload<ITransportSequenceNumber>(out var payload) ? payload.SequenceNumber : null;            
+            ulong sentTimeAsSequenceFallback() => (ulong)(context.SentTime ?? context.ReceiveContext.GetSentTime() ?? DateTime.UtcNow).Ticks;
+
+            var batchEntry = new BatchEntry(
+                context,
+                sequenceNumber ?? sentTimeAsSequenceFallback(),
+                () => RemoveCanceledMessage(messageId));
+
+            if (!_messages.ContainsKey(messageId))
+                _messages.Add(messageId, batchEntry);
+            else
+                batchEntry.Unregister();
 
             if (_options.TimeLimitStart == BatchTimeLimitStart.FromLast)
                 _timer.Change(_options.TimeLimit, TimeSpan.FromMilliseconds(-1));
@@ -96,10 +112,37 @@
 
                 List<ConsumeContext<TMessage>> messageList = GetMessageBatchInOrder();
 
-                return _dispatcher.Push(() => Deliver(context, messageList, BatchCompletionMode.Size));
+                return messageList.Count == 0
+                    ? Task.CompletedTask
+                    : _dispatcher.Push(() => Deliver(context, messageList, BatchCompletionMode.Size));
             }
 
             return Task.CompletedTask;
+        }
+
+        void RemoveCanceledMessage(Guid messageId)
+        {
+            Task.Run(() => _executor.Push(() =>
+            {
+                if (IsCompleted)
+                    return Task.CompletedTask;
+
+                if (_messages.TryGetValue(messageId, out var batchEntry))
+                {
+                    batchEntry.Unregister();
+
+                    _messages.Remove(messageId);
+
+                    if (_messages.Count == 0)
+                    {
+                        IsCompleted = true;
+
+                        _completed.TrySetCanceled();
+                    }
+                }
+
+                return Task.CompletedTask;
+            }));
         }
 
         bool IsReadyToDeliver(ConsumeContext context)
@@ -123,6 +166,9 @@
         async Task Deliver(ConsumeContext context, IReadOnlyList<ConsumeContext<TMessage>> messages, BatchCompletionMode batchCompletionMode)
         {
             _timer.Dispose();
+
+            foreach (var batchEntry in _messages.Values)
+                batchEntry.Unregister();
 
             LogContext.SetCurrentIfNull(_logContext);
 
@@ -156,9 +202,29 @@
 
         List<ConsumeContext<TMessage>> GetMessageBatchInOrder()
         {
-            return _messages.Values
-                .OrderBy(x => x.SentTime ?? x.MessageId?.ToNewId().Timestamp ?? default)
-                .ToList();
+            return _messages.Values.OrderBy(x => x.Index).Select(x => x.Context).ToList();
+        }
+
+
+        readonly struct BatchEntry
+        {
+            public readonly ConsumeContext<TMessage> Context;
+            public readonly ulong Index;
+            readonly CancellationTokenRegistration _registration;
+
+            public BatchEntry(ConsumeContext<TMessage> context, ulong index, Action canceled)
+            {
+                Context = context;
+                Index = index;
+
+                if (context.CancellationToken.CanBeCanceled)
+                    _registration = context.CancellationToken.Register(() => canceled());
+            }
+
+            public void Unregister()
+            {
+                _registration.Dispose();
+            }
         }
     }
 }

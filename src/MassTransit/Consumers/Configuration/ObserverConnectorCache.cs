@@ -1,7 +1,6 @@
 namespace MassTransit.Configuration
 {
     using System;
-    using System.Threading;
 
 
     public class ObserverConnectorCache<TMessage> :
@@ -22,8 +21,8 @@ namespace MassTransit.Configuration
 
         static class InstanceCache
         {
-            internal static readonly Lazy<IObserverConnectorCache<TMessage>> Cached = new Lazy<IObserverConnectorCache<TMessage>>(
-                () => new ObserverConnectorCache<TMessage>(), LazyThreadSafetyMode.PublicationOnly);
+            internal static readonly Lazy<IObserverConnectorCache<TMessage>> Cached =
+                new Lazy<IObserverConnectorCache<TMessage>>(() => new ObserverConnectorCache<TMessage>());
         }
     }
 }

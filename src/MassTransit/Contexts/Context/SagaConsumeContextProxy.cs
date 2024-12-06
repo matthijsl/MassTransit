@@ -33,5 +33,17 @@ namespace MassTransit.Context
         }
 
         public bool IsCompleted => _sagaContext.IsCompleted;
+
+        public void Method4()
+        {
+        }
+
+        public void Method5()
+        {
+        }
+
+        public void Method6()
+        {
+        }
     }
 }

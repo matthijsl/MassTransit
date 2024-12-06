@@ -1,4 +1,5 @@
-﻿namespace MassTransit.JobService
+﻿#nullable enable
+namespace MassTransit.JobService
 {
     using System;
     using System.Threading.Tasks;
@@ -10,30 +11,37 @@
         where T : class
     {
         readonly ConsumeJobContext<T> _context;
+        readonly TimeSpan _jobCancellationTimeout;
 
-        public ConsumerJobHandle(ConsumeJobContext<T> context, Task task)
+        public ConsumerJobHandle(ConsumeJobContext<T> context, Task task, TimeSpan jobCancellationTimeout)
         {
             _context = context;
+            _jobCancellationTimeout = jobCancellationTimeout;
             JobTask = task;
         }
 
         public Guid JobId => _context.JobId;
         public Task JobTask { get; }
 
-        public async Task Cancel()
+        public async Task Cancel(string? reason)
         {
             if (_context.CancellationToken.IsCancellationRequested)
                 return;
 
-            _context.Cancel();
+            _context.Cancel(reason);
 
             try
             {
-                await JobTask.OrTimeout(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+                await JobTask.OrTimeout(_jobCancellationTimeout).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
             }
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return _context.DisposeAsync();
         }
     }
 }

@@ -8,17 +8,17 @@
         ICorrelationIdMessageSendTopologyConvention<TMessage>
         where TMessage : class
     {
-        readonly IList<ICorrelationIdSelector<TMessage>> _selectors;
+        readonly List<ICorrelationIdSelector<TMessage>> _selectors;
 
         public CorrelationIdMessageSendTopologyConvention()
         {
-            _selectors = new List<ICorrelationIdSelector<TMessage>>
-            {
+            _selectors =
+            [
                 new CorrelatedByCorrelationIdSelector<TMessage>(),
                 new PropertyCorrelationIdSelector<TMessage>("CorrelationId"),
                 new PropertyCorrelationIdSelector<TMessage>("EventId"),
                 new PropertyCorrelationIdSelector<TMessage>("CommandId")
-            };
+            ];
         }
 
         bool IMessageSendTopologyConvention.TryGetMessageSendTopologyConvention<T>(out IMessageSendTopologyConvention<T> convention)
@@ -47,9 +47,9 @@
 
         public bool TryGetMessageCorrelationId(out IMessageCorrelationId<TMessage> messageCorrelationId)
         {
-            foreach (ICorrelationIdSelector<TMessage> selector in _selectors)
+            for (var index = 0; index < _selectors.Count; index++)
             {
-                if (selector.TryGetSetCorrelationId(out messageCorrelationId))
+                if (_selectors[index].TryGetSetCorrelationId(out messageCorrelationId))
                     return true;
             }
 

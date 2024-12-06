@@ -7,11 +7,11 @@ namespace MassTransit.Azure.Table.Tests.SlowConcurrentSaga
     using DataAccess;
     using Events;
     using NUnit.Framework;
-    using Shouldly;
     using Testing;
 
 
-    public class SlowConcurrentSaga_Specs : AzureTableInMemoryTestFixture
+    public class SlowConcurrentSaga_Specs :
+        AzureTableInMemoryTestFixture
     {
         readonly Lazy<ISagaRepository<SlowConcurrentSaga>> _sagaRepository;
         readonly ISagaStateMachineTestHarness<SlowConcurrentSagaStateMachine, SlowConcurrentSaga> _sagaTestHarness;
@@ -32,25 +32,27 @@ namespace MassTransit.Azure.Table.Tests.SlowConcurrentSaga
 
             await InputQueueSendEndpoint.Send(message);
 
-            Guid? foundId = await _sagaRepository.Value.ShouldContainSaga(message.CorrelationId, TestTimeout);
+            Guid? foundId = await _sagaRepository.Value.ShouldContainSaga(message.CorrelationId, TestInactivityTimeout);
 
-            foundId.HasValue.ShouldBe(true);
+            Assert.That(foundId, Is.Not.Null);
 
             var slowMessage = new IncrementCounterSlowly { CorrelationId = sagaId };
             await Task.WhenAll(
                 Task.Run(() => InputQueueSendEndpoint.Send(slowMessage)),
                 Task.Run(() => InputQueueSendEndpoint.Send(slowMessage)));
 
-            _sagaTestHarness.Consumed.Select<IncrementCounterSlowly>().Take(2).ToList();
+            _ = _sagaTestHarness.Consumed.Select<IncrementCounterSlowly>().Take(2).ToList();
 
             await InactivityTask;
 
-            await _sagaRepository.Value.ShouldContainSaga(sagaId, s => s.Counter == 3, TestTimeout);
+            Assert.That(await _sagaRepository.Value.ShouldContainSaga(sagaId, s => s.Counter == 3, TestInactivityTimeout), Is.Not.Null);
         }
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {
             configurator.ConcurrentMessageLimit = 16;
+
+            configurator.UseMessageRetry(x => x.Interval(5, 100));
         }
     }
 }

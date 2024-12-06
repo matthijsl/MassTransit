@@ -8,6 +8,7 @@ namespace MassTransit.SqlTransport.SqlServer
     using System.Threading;
     using System.Threading.Tasks;
     using Dapper;
+    using Microsoft.Data.SqlClient;
     using Serialization;
     using Topology;
 
@@ -30,6 +31,7 @@ namespace MassTransit.SqlTransport.SqlServer
         readonly string _receiveSql;
         readonly string _renewMessageLockSql;
         readonly string _sendSql;
+        readonly string _touchQueueSql;
         readonly string _unlockSql;
 
         public SqlServerClientContext(SqlServerDbConnectionContext context, CancellationToken cancellationToken)
@@ -49,6 +51,7 @@ namespace MassTransit.SqlTransport.SqlServer
             _receivePartitionedSql = $"{_context.Schema}.FetchMessagesPartitioned";
             _deleteMessageSql = $"{_context.Schema}.DeleteMessage";
             _renewMessageLockSql = $"{_context.Schema}.RenewMessageLock";
+            _touchQueueSql = $"{_context.Schema}.TouchQueue";
             _unlockSql = $"{_context.Schema}.UnlockMessage";
             _moveMessageTypeSql = $"{_context.Schema}.MoveMessage";
             _deleteScheduledMessageSql = $"{_context.Schema}.DeleteScheduledMessage";
@@ -107,22 +110,50 @@ namespace MassTransit.SqlTransport.SqlServer
             return result ?? throw new SqlTopologyException("Purge queue failed");
         }
 
-        public override Task<IEnumerable<SqlTransportMessage>> ReceiveMessages(string queueName, SqlReceiveMode mode, int messageLimit, TimeSpan lockDuration)
+        public override async Task<IEnumerable<SqlTransportMessage>> ReceiveMessages(string queueName, SqlReceiveMode mode, int messageLimit,
+            int concurrentLimit, TimeSpan lockDuration)
         {
-            var sql = mode switch
+            try
             {
-                SqlReceiveMode.Normal => _receiveSql,
-                _ => _receivePartitionedSql
-            };
+                if (mode == SqlReceiveMode.Normal)
+                {
+                    return await Query<SqlTransportMessage>(_receiveSql, new
+                    {
+                        queueName,
+                        consumerId = _consumerId,
+                        lockId = NewId.NextGuid(),
+                        lockDuration = (int)lockDuration.TotalSeconds,
+                        fetchCount = messageLimit
+                    }).ConfigureAwait(false);
+                }
 
-            return Query<SqlTransportMessage>(sql, new
+                var ordered = mode switch
+                {
+                    SqlReceiveMode.PartitionedOrdered => 1,
+                    SqlReceiveMode.PartitionedOrderedConcurrent => 1,
+                    _ => 0
+                };
+
+                return await Query<SqlTransportMessage>(_receivePartitionedSql, new
+                {
+                    queueName,
+                    consumerId = _consumerId,
+                    lockId = NewId.NextGuid(),
+                    lockDuration = (int)lockDuration.TotalSeconds,
+                    fetchCount = messageLimit,
+                    concurrentCount = concurrentLimit,
+                    ordered
+                }).ConfigureAwait(false);
+            }
+            catch (SqlException exception) when (exception.Number == 1205)
             {
-                queueName,
-                consumerId = _consumerId,
-                lockId = NewId.NextGuid(),
-                lockDuration = (int)lockDuration.TotalSeconds,
-                fetchCount = messageLimit
-            });
+                return Array.Empty<SqlTransportMessage>();
+            }
+        }
+
+        public override Task TouchQueue(string queueName)
+        {
+            return Query<SqlTransportMessage>(_touchQueueSql, new { queueName });
         }
 
         public override Task Send<T>(string queueName, SqlMessageSendContext<T> context)
@@ -130,9 +161,9 @@ namespace MassTransit.SqlTransport.SqlServer
             IEnumerable<KeyValuePair<string, object>> headers = context.Headers.GetAll().ToList();
             var headersAsJson = headers.Any() ? JsonSerializer.Serialize(headers, SystemTextJsonMessageSerializer.Options) : null;
 
-            context.Headers.TryGetHeader(MessageHeaders.SchedulingTokenId, out var schedulingTokenId);
+            Guid? schedulingTokenId = context.Headers.Get<Guid>(MessageHeaders.SchedulingTokenId);
 
-            return QuerySingle<MessageDelivery>(_sendSql, new
+            return Execute<long>(_sendSql, new
             {
                 entityName = queueName,
                 priority = (int)(context.Priority ?? 100),
@@ -160,14 +191,14 @@ namespace MassTransit.SqlTransport.SqlServer
             });
         }
 
-        public override Task<IEnumerable<MessageDelivery>> Publish<T>(string topicName, SqlMessageSendContext<T> context)
+        public override Task Publish<T>(string topicName, SqlMessageSendContext<T> context)
         {
             IEnumerable<KeyValuePair<string, object>> headers = context.Headers.GetAll().ToList();
             var headersAsJson = headers.Any() ? JsonSerializer.Serialize(headers, SystemTextJsonMessageSerializer.Options) : null;
 
-            context.Headers.TryGetHeader(MessageHeaders.SchedulingTokenId, out var schedulingTokenId);
+            Guid? schedulingTokenId = context.Headers.Get<Guid>(MessageHeaders.SchedulingTokenId);
 
-            return Query<MessageDelivery>(_publishSql, new
+            return Execute<long>(_publishSql, new
             {
                 entityName = topicName,
                 priority = (int)(context.Priority ?? 100),
@@ -206,12 +237,12 @@ namespace MassTransit.SqlTransport.SqlServer
             return result == messageDeliveryId;
         }
 
-        public override async Task<bool> DeleteScheduledMessage(Guid tokenId)
+        public override async Task<bool> DeleteScheduledMessage(Guid tokenId, CancellationToken cancellationToken)
         {
             IEnumerable<SqlTransportMessage> result = await Query<SqlTransportMessage>(_deleteScheduledMessageSql, new
             {
                 tokenId,
-            }).ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(false);
 
             return result.Any();
         }
@@ -254,7 +285,7 @@ namespace MassTransit.SqlTransport.SqlServer
             {
                 messageDeliveryId,
                 lockId,
-                duration = (int)delay.TotalSeconds,
+                delay = delay > TimeSpan.Zero ? Math.Max((int)delay.TotalSeconds, 1) : 0,
                 headers = headersAsJson
             }).ConfigureAwait(false);
 
@@ -280,6 +311,13 @@ namespace MassTransit.SqlTransport.SqlServer
         {
             return _context.Query((connection, transaction) => connection
                 .QueryAsync<T>(functionName, values, transaction, commandType: CommandType.StoredProcedure), CancellationToken);
+        }
+
+        Task<IEnumerable<T>> Query<T>(string functionName, object values, CancellationToken cancellationToken)
+            where T : class
+        {
+            return _context.Query((connection, transaction) => connection
+                .QueryAsync<T>(functionName, values, transaction, commandType: CommandType.StoredProcedure), cancellationToken);
         }
     }
 }

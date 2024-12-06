@@ -18,9 +18,12 @@
         {
             ConsumeContext<RoutingSlipCompleted> context = await _completed;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
 
-            Assert.AreEqual("Used", context.GetVariable<string>("Test"));
+                Assert.That(context.GetVariable<string>("Test"), Is.EqualTo("Used"));
+            });
         }
 
         [Test]
@@ -28,11 +31,13 @@
         {
             ConsumeContext<RoutingSlipActivityCompleted> context = await _activityCompleted;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<RoutingSlipCompleted>> _completed;
         Task<ConsumeContext<RoutingSlipActivityCompleted>> _activityCompleted;
+        #pragma warning restore NUnit1032
         Guid _trackingNumber;
 
         [OneTimeSetUp]
@@ -75,7 +80,7 @@
         {
             ConsumeContext<RoutingSlipActivityCompleted> context = await _activityCompleted;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
         }
 
         [Test]
@@ -83,13 +88,18 @@
         {
             ConsumeContext<RoutingSlipCompleted> context = await _completed;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
 
-            Assert.AreEqual("Used", context.GetVariable<string>("Test"));
+                Assert.That(context.GetVariable<string>("Test"), Is.EqualTo("Used"));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<RoutingSlipCompleted>> _completed;
         Task<ConsumeContext<RoutingSlipActivityCompleted>> _activityCompleted;
+        #pragma warning restore NUnit1032
         Guid _trackingNumber;
 
         [OneTimeSetUp]
@@ -128,7 +138,7 @@
         {
             ConsumeContext<RoutingSlipActivityCompleted> context = await _activityCompleted;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
         }
 
         [Test]
@@ -136,13 +146,18 @@
         {
             ConsumeContext<RoutingSlipCompleted> context = await _completed;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
 
-            Assert.AreEqual("Used", context.GetVariable<string>("Test"));
+                Assert.That(context.GetVariable<string>("Test"), Is.EqualTo("Used"));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<RoutingSlipCompleted>> _completed;
         Task<ConsumeContext<RoutingSlipActivityCompleted>> _activityCompleted;
+        #pragma warning restore NUnit1032
         Guid _trackingNumber;
 
         [OneTimeSetUp]
@@ -185,9 +200,12 @@
         {
             ConsumeContext<RoutingSlipActivityCompleted> context = await _activityCompleted;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
 
-            Assert.That(context.GetArgument<Guid>("GuidValue"), Is.EqualTo(_trackingNumber));
+                Assert.That(context.GetArgument<Guid>("GuidValue"), Is.EqualTo(_trackingNumber));
+            });
         }
 
         [Test]
@@ -195,13 +213,18 @@
         {
             ConsumeContext<RoutingSlipCompleted> context = await _completed;
 
-            Assert.AreEqual(_trackingNumber, context.Message.TrackingNumber);
+            Assert.Multiple(() =>
+            {
+                Assert.That(context.Message.TrackingNumber, Is.EqualTo(_trackingNumber));
 
-            Assert.AreEqual("Used", context.GetVariable<string>("Test"));
+                Assert.That(context.GetVariable<string>("Test"), Is.EqualTo("Used"));
+            });
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<RoutingSlipCompleted>> _completed;
         Task<ConsumeContext<RoutingSlipActivityCompleted>> _activityCompleted;
+        #pragma warning restore NUnit1032
         Guid _trackingNumber;
 
         [OneTimeSetUp]

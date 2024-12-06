@@ -4,7 +4,6 @@
     using System.Threading.Tasks;
     using NUnit.Framework;
     using Saga;
-    using Shouldly;
     using StackExchange.Redis;
     using TestFramework;
     using Testing;
@@ -25,19 +24,20 @@
 
             Guid? found = await _sagaRepository.Value.ShouldContainSaga(message.CorrelationId, TestTimeout);
 
-            found.ShouldNotBeNull();
+            Assert.That(found, Is.Not.Null);
 
             var nextMessage = new CompleteSimpleSaga { CorrelationId = sagaId };
 
             await InputQueueSendEndpoint.Send(nextMessage);
 
             found = await _sagaRepository.Value.ShouldContainSaga(sagaId, x => x != null && x.Moved, TestTimeout);
-            found.ShouldNotBeNull();
+            Assert.That(found, Is.Not.Null);
 
             var retrieveRepository = _sagaRepository.Value as ILoadSagaRepository<SimpleSaga>;
             var retrieved = await retrieveRepository.Load(sagaId);
-            retrieved.ShouldNotBeNull();
-            retrieved.Moved.ShouldBeTrue();
+
+            Assert.That(retrieved, Is.Not.Null);
+            Assert.That(retrieved.Moved, Is.True);
         }
 
         [Test]
@@ -50,7 +50,7 @@
 
             Guid? found = await _sagaRepository.Value.ShouldContainSaga(message.CorrelationId, TestTimeout);
 
-            found.ShouldNotBeNull();
+            Assert.That(found, Is.Not.Null);
         }
 
         readonly Lazy<ISagaRepository<SimpleSaga>> _sagaRepository;
@@ -60,7 +60,7 @@
             var redis = ConnectionMultiplexer.Connect("127.0.0.1");
             redis.PreserveAsyncOrder = false;
 
-            _sagaRepository = new Lazy<ISagaRepository<SimpleSaga>>(() => RedisSagaRepository<SimpleSaga>.Create(() => redis.GetDatabase()));
+            _sagaRepository = new Lazy<ISagaRepository<SimpleSaga>>(() => RedisSagaRepository<SimpleSaga>.Create(_ => redis, () => redis.GetDatabase()));
         }
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
@@ -85,19 +85,19 @@
 
             Guid? found = await _sagaRepository.Value.ShouldContainSaga(message.CorrelationId, TestTimeout);
 
-            found.ShouldNotBeNull();
+            Assert.That(found, Is.Not.Null);
 
             var nextMessage = new CompleteSimpleSaga { CorrelationId = sagaId };
 
             await InputQueueSendEndpoint.Send(nextMessage);
 
             found = await _sagaRepository.Value.ShouldContainSaga(sagaId, x => x != null && x.Moved, TestTimeout);
-            found.ShouldNotBeNull();
+            Assert.That(found, Is.Not.Null);
 
             var retrieveRepository = _sagaRepository.Value as ILoadSagaRepository<SimpleSaga>;
             var retrieved = await retrieveRepository.Load(sagaId);
-            retrieved.ShouldNotBeNull();
-            retrieved.Moved.ShouldBeTrue();
+            Assert.That(retrieved, Is.Not.Null);
+            Assert.That(retrieved.Moved, Is.True);
         }
 
         [Test]
@@ -110,7 +110,7 @@
 
             Guid? found = await _sagaRepository.Value.ShouldContainSaga(message.CorrelationId, TestTimeout);
 
-            found.ShouldNotBeNull();
+            Assert.That(found, Is.Not.Null);
         }
 
         readonly Lazy<ISagaRepository<SimpleSaga>> _sagaRepository;
@@ -120,7 +120,7 @@
             var redis = ConnectionMultiplexer.Connect("127.0.0.1");
             redis.PreserveAsyncOrder = false;
 
-            _sagaRepository = new Lazy<ISagaRepository<SimpleSaga>>(() => RedisSagaRepository<SimpleSaga>.Create(() => redis.GetDatabase(), false));
+            _sagaRepository = new Lazy<ISagaRepository<SimpleSaga>>(() => RedisSagaRepository<SimpleSaga>.Create(_ => redis, () => redis.GetDatabase(), false));
         }
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
@@ -145,19 +145,19 @@
 
             Guid? found = await _sagaRepository.Value.ShouldContainSaga(message.CorrelationId, TestTimeout);
 
-            found.ShouldNotBeNull();
+            Assert.That(found, Is.Not.Null);
 
             var nextMessage = new CompleteSimpleSaga { CorrelationId = sagaId };
 
             await InputQueueSendEndpoint.Send(nextMessage);
 
             found = await _sagaRepository.Value.ShouldContainSaga(sagaId, x => x != null && x.Moved, TestTimeout);
-            found.ShouldNotBeNull();
+            Assert.That(found, Is.Not.Null);
 
             var retrieveRepository = _sagaRepository.Value as ILoadSagaRepository<SimpleSaga>;
             var retrieved = await retrieveRepository.Load(sagaId);
-            retrieved.ShouldNotBeNull();
-            retrieved.Moved.ShouldBeTrue();
+            Assert.That(retrieved, Is.Not.Null);
+            Assert.That(retrieved.Moved, Is.True);
         }
 
         [Test]
@@ -170,7 +170,7 @@
 
             Guid? found = await _sagaRepository.Value.ShouldContainSaga(message.CorrelationId, TestTimeout);
 
-            found.ShouldNotBeNull();
+            Assert.That(found, Is.Not.Null);
         }
 
         readonly Lazy<ISagaRepository<SimpleSaga>> _sagaRepository;
@@ -180,7 +180,8 @@
             var redis = ConnectionMultiplexer.Connect("127.0.0.1");
             redis.PreserveAsyncOrder = false;
 
-            _sagaRepository = new Lazy<ISagaRepository<SimpleSaga>>(() => RedisSagaRepository<SimpleSaga>.Create(() => redis.GetDatabase(), keyPrefix: "test"));
+            _sagaRepository = new Lazy<ISagaRepository<SimpleSaga>>(() =>
+                RedisSagaRepository<SimpleSaga>.Create(_ => redis, () => redis.GetDatabase(), keyPrefix: "test"));
         }
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)

@@ -31,6 +31,7 @@ namespace MassTransit.Util
         readonly SemaphoreSlim? _rateLimitSemaphore;
         readonly Timer? _rateLimitTimer;
         readonly int _refreshThreshold;
+        readonly TimeSpan _requestCancellationTimeout;
         readonly int _requestLimit;
         readonly object _requestLock = new object();
         readonly SemaphoreSlim _requestSemaphore;
@@ -56,6 +57,7 @@ namespace MassTransit.Util
 
             _options = options;
 
+            _requestCancellationTimeout = _options.RequestCancellationTimeout ?? TimeSpan.FromSeconds(1);
 
             _disposeToken = new CancellationTokenSource();
             _requestCount = 1;
@@ -130,11 +132,11 @@ namespace MassTransit.Util
         /// </summary>
         /// <param name="requestCallback"></param>
         /// <param name="cancellationToken"></param>
-        public async Task Run(RequestCallback requestCallback, CancellationToken cancellationToken = default)
+        public async Task<int> Run(RequestCallback requestCallback, CancellationToken cancellationToken = default)
         {
             var requestCount = _requestCount;
 
-            var tasks = new List<Task>(requestCount);
+            var tasks = new List<Task<int>>(requestCount);
 
             try
             {
@@ -147,16 +149,20 @@ namespace MassTransit.Util
                     throw;
             }
 
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+            var counts = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            return counts.Sum();
         }
 
-        async Task RunRequest(RequestCallback requestCallback, CancellationToken cancellationToken = default)
+        async Task<int> RunRequest(RequestCallback requestCallback, CancellationToken cancellationToken = default)
         {
             using var activeRequest = await BeginRequest(cancellationToken).ConfigureAwait(false);
 
-            var count = await requestCallback(activeRequest.ResultLimit, cancellationToken).ConfigureAwait(false);
+            var count = await requestCallback(activeRequest.ResultLimit, activeRequest.CancellationToken).ConfigureAwait(false);
 
             await activeRequest.Complete(count, CancellationToken.None).ConfigureAwait(false);
+
+            return count;
         }
 
         /// <summary>
@@ -166,11 +172,11 @@ namespace MassTransit.Util
         /// <param name="resultCallback"></param>
         /// <param name="cancellationToken"></param>
         /// <typeparam name="T"></typeparam>
-        public async Task Run<T>(RequestCallback<T> requestCallback, ResultCallback<T> resultCallback, CancellationToken cancellationToken = default)
+        public async Task<int> Run<T>(RequestCallback<T> requestCallback, ResultCallback<T> resultCallback, CancellationToken cancellationToken = default)
         {
             var requestCount = _requestCount;
 
-            var tasks = new List<Task>(requestCount);
+            var tasks = new List<Task<int>>(requestCount);
 
             try
             {
@@ -183,27 +189,29 @@ namespace MassTransit.Util
                     throw;
             }
 
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+            var counts = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            return counts.Sum();
         }
 
-        async Task RunRequest<T>(RequestCallback<T> requestCallback, ResultCallback<T> resultCallback, CancellationToken cancellationToken = default)
+        async Task<int> RunRequest<T>(RequestCallback<T> requestCallback, ResultCallback<T> resultCallback, CancellationToken cancellationToken = default)
         {
             using var activeRequest = await BeginRequest(cancellationToken).ConfigureAwait(false);
 
-            IEnumerable<T> results = await requestCallback(activeRequest.ResultLimit, cancellationToken).ConfigureAwait(false);
+            IEnumerable<T> results = await requestCallback(activeRequest.ResultLimit, activeRequest.CancellationToken).ConfigureAwait(false);
 
             var count = 0;
             try
             {
                 foreach (var result in results)
                 {
-                    await _resultSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    await _resultSemaphore.WaitAsync(activeRequest.CancellationToken).ConfigureAwait(false);
 
                     async Task RunResultCallback()
                     {
                         try
                         {
-                            await resultCallback(result, cancellationToken).ConfigureAwait(false);
+                            await resultCallback(result, activeRequest.CancellationToken).ConfigureAwait(false);
                         }
                         finally
                         {
@@ -223,6 +231,8 @@ namespace MassTransit.Util
             }
 
             await activeRequest.Complete(count, CancellationToken.None).ConfigureAwait(false);
+
+            return count;
         }
 
         /// <summary>
@@ -235,7 +245,7 @@ namespace MassTransit.Util
         /// <param name="cancellationToken"></param>
         /// <typeparam name="T"></typeparam>
         /// <typeparam name="TKey"></typeparam>
-        public async Task Run<T, TKey>(RequestCallback<T> requestCallback, ResultCallback<T> resultCallback, GroupCallback<T, TKey> groupCallback,
+        public async Task<int> Run<T, TKey>(RequestCallback<T> requestCallback, ResultCallback<T> resultCallback, GroupCallback<T, TKey> groupCallback,
             OrderCallback<T> orderCallback, CancellationToken cancellationToken = default)
         {
             var requestCount = _requestCount;
@@ -257,7 +267,7 @@ namespace MassTransit.Util
 
             List<IGrouping<TKey, T>> resultSets = groupCallback(results.SelectMany(x => x)).ToList();
 
-            var resultTasks = new List<Task>(ResultLimit);
+            var resultTasks = new List<Task<int>>(ResultLimit);
 
             try
             {
@@ -270,24 +280,26 @@ namespace MassTransit.Util
                     throw;
             }
 
-            await Task.WhenAll(resultTasks).ConfigureAwait(false);
+            var counts = await Task.WhenAll(resultTasks).ConfigureAwait(false);
+
+            return counts.Sum();
         }
 
         async Task<IReadOnlyList<T>> RunRequest<T>(RequestCallback<T> requestCallback, CancellationToken cancellationToken = default)
         {
             using var activeRequest = await BeginRequest(cancellationToken).ConfigureAwait(false);
 
-            List<T> results = (await requestCallback(activeRequest.ResultLimit, cancellationToken).ConfigureAwait(false)).ToList();
+            List<T> results = (await requestCallback(activeRequest.ResultLimit, activeRequest.CancellationToken).ConfigureAwait(false)).ToList();
 
             await activeRequest.Complete(results.Count, CancellationToken.None).ConfigureAwait(false);
 
             return results;
         }
 
-        async Task RunResultSet<TKey, T>(IGrouping<TKey, T> results, ResultCallback<T> resultCallback, OrderCallback<T> orderCallback,
+        async Task<int> RunResultSet<TKey, T>(IGrouping<TKey, T> results, ResultCallback<T> resultCallback, OrderCallback<T> orderCallback,
             CancellationToken cancellationToken = default)
         {
-            int count = 0;
+            var count = 0;
 
             try
             {
@@ -316,6 +328,8 @@ namespace MassTransit.Util
                 if (count == 0)
                     throw;
             }
+
+            return count;
         }
 
         public async Task<ActiveRequest> BeginRequest(CancellationToken cancellationToken = default)
@@ -354,7 +368,7 @@ namespace MassTransit.Util
                     _pendingResultCount += resultLimit;
                 }
 
-                return new ActiveRequest(this, resultLimit);
+                return new ActiveRequest(this, resultLimit, cancellationToken, _requestCancellationTimeout);
             }
             catch (OperationCanceledException)
             {

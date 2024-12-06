@@ -18,7 +18,7 @@
         public void Should_extract_receive_endpoint_addresses()
         {
             List<Uri> receiveAddresses = Bus.GetReceiveEndpointAddresses().ToList();
-            Assert.Contains(InputQueueAddress, receiveAddresses);
+            Assert.That(receiveAddresses, Does.Contain(InputQueueAddress));
         }
 
         [Test]
@@ -30,7 +30,9 @@
             await _handled;
         }
 
+        #pragma warning disable NUnit1032
         Task<ConsumeContext<PingMessage>> _handled;
+        #pragma warning restore NUnit1032
 
         protected override void ConfigureInMemoryReceiveEndpoint(IInMemoryReceiveEndpointConfigurator configurator)
         {

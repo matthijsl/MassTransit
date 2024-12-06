@@ -16,6 +16,8 @@ namespace MassTransit.EventHubIntegration.Tests
     public class Receive_Specs :
         InMemoryTestFixture
     {
+        const string EventHubName = "receive-eh";
+
         [Test]
         public async Task Should_receive()
         {
@@ -38,7 +40,7 @@ namespace MassTransit.EventHubIntegration.Tests
                         k.Host(Configuration.EventHubNamespace);
                         k.Storage(Configuration.StorageAccount);
 
-                        k.ReceiveEndpoint(Configuration.EventHubName, c =>
+                        k.ReceiveEndpoint(EventHubName, Configuration.ConsumerGroup, c =>
                         {
                             c.ConfigureConsumer<EventHubMessageConsumer>(context);
                         });
@@ -54,7 +56,7 @@ namespace MassTransit.EventHubIntegration.Tests
 
             try
             {
-                await using var producer = new EventHubProducerClient(Configuration.EventHubNamespace, Configuration.EventHubName);
+                await using var producer = new EventHubProducerClient(Configuration.EventHubNamespace, EventHubName);
 
                 var message = new EventHubMessageClass("test");
                 var context = new MessageSendContext<EventHubMessage>(message);
@@ -64,7 +66,7 @@ namespace MassTransit.EventHubIntegration.Tests
 
                 ConsumeContext<EventHubMessage> result = await taskCompletionSource.Task;
 
-                Assert.AreEqual(message.Text, result.Message.Text);
+                Assert.That(result.Message.Text, Is.EqualTo(message.Text));
             }
             finally
             {
@@ -104,9 +106,12 @@ namespace MassTransit.EventHubIntegration.Tests
         }
     }
 
+
     public class ReceiveWithPayload_Specs :
         InMemoryTestFixture
     {
+        const string EventHubName = "receive-eh";
+
         [Test]
         public async Task Should_contains_payload()
         {
@@ -129,7 +134,7 @@ namespace MassTransit.EventHubIntegration.Tests
                         k.Host(Configuration.EventHubNamespace);
                         k.Storage(Configuration.StorageAccount);
 
-                        k.ReceiveEndpoint(Configuration.EventHubName, c =>
+                        k.ReceiveEndpoint(EventHubName, Configuration.ConsumerGroup, c =>
                         {
                             c.ConfigureConsumer<EventHubMessageConsumer>(context);
                         });
@@ -146,13 +151,13 @@ namespace MassTransit.EventHubIntegration.Tests
             try
             {
                 var producerProvider = provider.GetRequiredService<IEventHubProducerProvider>();
-                var producer = await producerProvider.GetProducer(Configuration.EventHubName);
+                var producer = await producerProvider.GetProducer(EventHubName);
 
                 await producer.Produce<EventHubMessage>(new { }, TestCancellationToken);
 
                 ConsumeContext<EventHubMessage> result = await taskCompletionSource.Task;
 
-                Assert.IsTrue(result.TryGetPayload(out EventHubConsumeContext _));
+                Assert.That(result.TryGetPayload(out EventHubConsumeContext _), Is.True);
             }
             finally
             {

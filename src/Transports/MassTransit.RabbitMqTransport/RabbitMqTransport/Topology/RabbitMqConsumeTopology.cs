@@ -12,7 +12,7 @@ namespace MassTransit.RabbitMqTransport.Topology
     {
         readonly IMessageTopology _messageTopology;
         readonly IRabbitMqPublishTopology _publishTopology;
-        readonly IList<IRabbitMqConsumeTopologySpecification> _specifications;
+        readonly List<IRabbitMqConsumeTopologySpecification> _specifications;
 
         public RabbitMqConsumeTopology(IMessageTopology messageTopology, IRabbitMqPublishTopology publishTopology)
             : base(255)
@@ -85,7 +85,7 @@ namespace MassTransit.RabbitMqTransport.Topology
             return base.Validate().Concat(_specifications.SelectMany(x => x.Validate()));
         }
 
-        protected override IMessageConsumeTopologyConfigurator CreateMessageTopology<T>(Type type)
+        protected override IMessageConsumeTopologyConfigurator CreateMessageTopology<T>()
         {
             var exchangeTypeSelector = new MessageExchangeTypeSelector<T>(ExchangeTypeSelector);
 

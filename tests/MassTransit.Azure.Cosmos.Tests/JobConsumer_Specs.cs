@@ -83,6 +83,8 @@ namespace MassTransit.Azure.Cosmos.Tests
                         .Endpoint(e => e.PrefetchCount = 100);
 
                     x.AddJobSagaStateMachines()
+                        .JobEndpoint(e => e.Name = "da-job")
+                        .JobAttemptEndpoint(e => e.Name = "da_job-attempt")
                         .CosmosRepository(r =>
                         {
                             r.AccountEndpoint = Configuration.AccountEndpoint;
@@ -114,13 +116,18 @@ namespace MassTransit.Azure.Cosmos.Tests
                     Job = new { Duration = TimeSpan.FromSeconds(1) }
                 });
 
-                Assert.That(response.Message.JobId, Is.EqualTo(jobId));
+                await Assert.MultipleAsync(async () =>
+                {
+                    Assert.That(response.Message.JobId, Is.EqualTo(jobId));
 
-                Assert.That(await harness.Published.Any<JobSubmitted>(), Is.True);
-                Assert.That(await harness.Published.Any<JobStarted>(), Is.True);
+                    Assert.That(await harness.Published.Any<JobSubmitted>(), Is.True);
 
-                Assert.That(await harness.Published.Any<JobCompleted>(), Is.True);
-                Assert.That(await harness.Published.Any<JobCompleted<OddJob>>(), Is.True);
+                    Assert.That(await harness.Published.Any<JobStarted>(), Is.True);
+                    Assert.That(await harness.Published.Any<JobStarted<OddJob>>(), Is.True);
+
+                    Assert.That(await harness.Published.Any<JobCompleted>(), Is.True);
+                    Assert.That(await harness.Published.Any<JobCompleted<OddJob>>(), Is.True);
+                });
             }
             finally
             {

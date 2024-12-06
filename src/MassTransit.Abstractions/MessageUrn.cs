@@ -5,6 +5,7 @@ namespace MassTransit
     using System.Reflection;
     using System.Runtime.Serialization;
     using System.Text;
+    using Metadata;
 
 
     [Serializable]
@@ -20,9 +21,9 @@ namespace MassTransit
         {
         }
 
-#if NET8_0_OR_GREATER
+    #if NET8_0_OR_GREATER
         [Obsolete("Formatter-based serialization is obsolete and should not be used.")]
-#endif
+    #endif
         protected MessageUrn(SerializationInfo serializationInfo, StreamingContext streamingContext)
             : base(serializationInfo, streamingContext)
         {
@@ -53,9 +54,20 @@ namespace MassTransit
 
         static Cached ValueFactory(Type type)
         {
-            return Activator.CreateInstance(typeof(Cached<>).MakeGenericType(type)) as Cached
-                ?? throw new InvalidOperationException($"MessageUrn creation failed for type: {TypeCache.GetShortName(type)} ");
+            return Activation.Activate(type, new Factory());
         }
+
+
+        readonly struct Factory :
+            IActivationType<Cached>
+        {
+            public Cached ActivateType<T>()
+                where T : class
+            {
+                return new Cached<T>();
+            }
+        }
+
 
         public void Deconstruct(out string? name, out string? ns, out string? assemblyName)
         {

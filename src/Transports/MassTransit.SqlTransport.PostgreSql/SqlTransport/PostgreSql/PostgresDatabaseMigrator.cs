@@ -50,6 +50,31 @@ namespace MassTransit.SqlTransport.PostgreSql
             END;
             $$ LANGUAGE plpgsql;
 
+            CREATE OR REPLACE FUNCTION "{0}".create_index_if_not_exists (i_name text, index_sql text)
+            RETURNS void AS
+            $$
+            BEGIN
+                IF NOT EXISTS (SELECT indexname
+                              FROM pg_indexes
+                              WHERE schemaname = '{0}'
+                              AND indexname = i_name) THEN
+                    EXECUTE index_sql;
+                END IF;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            CREATE OR REPLACE FUNCTION "{0}".add_column_if_not_exists (t_name text, c_name text, alter_sql text)
+            RETURNS void AS
+            $$
+            BEGIN
+                IF NOT EXISTS (SELECT column_name
+                              FROM information_schema.columns
+                              WHERE table_schema = '{0}' AND table_name = t_name AND column_name = c_name) THEN
+                    EXECUTE alter_sql;
+                END IF;
+            END;
+            $$ LANGUAGE plpgsql;
+
             CREATE SEQUENCE IF NOT EXISTS "{0}".topology_seq AS bigint;
 
             CREATE TABLE IF NOT EXISTS "{0}".queue
@@ -59,13 +84,18 @@ namespace MassTransit.SqlTransport.PostgreSql
 
                 name        text            not null,
                 type        integer         not null,
-                auto_delete integer
+                auto_delete integer,
+                max_delivery_count integer  not null DEFAULT 10
             );
 
-            SELECT "{0}".create_constraint_if_not_exists('queue', 'unique_queue',
-                    'CREATE UNIQUE INDEX IF NOT EXISTS queue_uqx ON "{0}".queue (type, name) INCLUDE (id);ALTER TABLE "{0}".queue ADD CONSTRAINT unique_queue UNIQUE USING INDEX queue_uqx;');
+            SELECT "{0}".add_column_if_not_exists('queue', 'max_delivery_count',
+                'ALTER TABLE "{0}".queue ADD COLUMN IF NOT EXISTS max_delivery_count integer not null DEFAULT 10;');
 
-            CREATE INDEX IF NOT EXISTS queue_auto_delete_ndx ON "{0}".queue (auto_delete) INCLUDE (id);
+            SELECT "{0}".create_constraint_if_not_exists('queue', 'unique_queue',
+                'CREATE UNIQUE INDEX IF NOT EXISTS queue_uqx ON "{0}".queue (type, name) INCLUDE (id);ALTER TABLE "{0}".queue ADD CONSTRAINT unique_queue UNIQUE USING INDEX queue_uqx;');
+
+            SELECT "{0}".create_index_if_not_exists('queue_auto_delete_ndx',
+                'CREATE INDEX IF NOT EXISTS queue_auto_delete_ndx ON "{0}".queue (auto_delete) INCLUDE (id);');
 
             CREATE TABLE IF NOT EXISTS "{0}".topic
             (
@@ -94,9 +124,11 @@ namespace MassTransit.SqlTransport.PostgreSql
             SELECT "{0}".create_constraint_if_not_exists('topic_subscription', 'unique_topic_subscription',
                     'CREATE UNIQUE INDEX IF NOT EXISTS topic_subscription_uqx ON "{0}".topic_subscription (source_id, destination_id, sub_type, routing_key, filter) INCLUDE (id);ALTER TABLE "{0}".topic_subscription ADD CONSTRAINT unique_topic_subscription UNIQUE USING INDEX topic_subscription_uqx;');
 
-            CREATE INDEX IF NOT EXISTS topic_subscription_source_id_ndx ON "{0}".topic_subscription (source_id) INCLUDE (id, destination_id);
+            SELECT "{0}".create_index_if_not_exists('topic_subscription_source_id_ndx',
+                    'CREATE INDEX IF NOT EXISTS topic_subscription_source_id_ndx ON "{0}".topic_subscription (source_id) INCLUDE (id, destination_id);');
 
-            CREATE INDEX IF NOT EXISTS topic_subscription_destination_id_ndx ON "{0}".topic_subscription (destination_id) INCLUDE (id, source_id);
+            SELECT "{0}".create_index_if_not_exists('topic_subscription_destination_id_ndx',
+                    'CREATE INDEX IF NOT EXISTS topic_subscription_destination_id_ndx ON "{0}".topic_subscription (destination_id) INCLUDE (id, source_id);');
 
             CREATE TABLE IF NOT EXISTS "{0}".queue_subscription
             (
@@ -114,9 +146,11 @@ namespace MassTransit.SqlTransport.PostgreSql
             SELECT "{0}".create_constraint_if_not_exists('queue_subscription', 'unique_queue_subscription',
                     'CREATE UNIQUE INDEX IF NOT EXISTS queue_subscription_uqx ON "{0}".queue_subscription (source_id, destination_id, sub_type, routing_key, filter);ALTER TABLE "{0}".queue_subscription ADD CONSTRAINT unique_queue_subscription UNIQUE USING INDEX queue_subscription_uqx;');
 
-            CREATE INDEX IF NOT EXISTS queue_subscription_source_id_ndx ON "{0}".queue_subscription (source_id) INCLUDE (id, destination_id);
+            SELECT "{0}".create_index_if_not_exists('queue_subscription_source_id_ndx',
+                    'CREATE INDEX IF NOT EXISTS queue_subscription_source_id_ndx ON "{0}".queue_subscription (source_id) INCLUDE (id, destination_id);');
 
-            CREATE INDEX IF NOT EXISTS queue_subscription_destination_id_ndx ON "{0}".queue_subscription (destination_id) INCLUDE (id, source_id);
+            SELECT "{0}".create_index_if_not_exists('queue_subscription_destination_id_ndx',
+                    'CREATE INDEX IF NOT EXISTS queue_subscription_destination_id_ndx ON "{0}".queue_subscription (destination_id) INCLUDE (id, source_id);');
 
             CREATE TABLE IF NOT EXISTS "{0}".message
             (
@@ -145,7 +179,8 @@ namespace MassTransit.SqlTransport.PostgreSql
                 host                 jsonb
             );
 
-            CREATE INDEX IF NOT EXISTS message_scheduling_token_id_ndx ON "{0}".message (scheduling_token_id) where message.scheduling_token_id IS NOT NULL;
+            SELECT "{0}".create_index_if_not_exists('message_scheduling_token_id_ndx',
+                    'CREATE INDEX IF NOT EXISTS message_scheduling_token_id_ndx ON "{0}".message (scheduling_token_id) where message.scheduling_token_id IS NOT NULL;');
 
             CREATE TABLE IF NOT EXISTS "{0}".message_delivery
             (
@@ -169,13 +204,27 @@ namespace MassTransit.SqlTransport.PostgreSql
                 transport_headers       jsonb
             );
 
-            CREATE INDEX IF NOT EXISTS message_delivery_fetch_ndx on "{0}".message_delivery (queue_id, priority, enqueue_time, message_delivery_id);
+            SELECT "{0}".create_index_if_not_exists('message_delivery_fetch_ndx',
+                    'CREATE INDEX IF NOT EXISTS message_delivery_fetch_ndx on "{0}".message_delivery (queue_id, priority, enqueue_time, message_delivery_id);');
 
-            CREATE INDEX IF NOT EXISTS message_delivery_fetch_part_ndx on "{0}".message_delivery (queue_id, partition_key, priority, enqueue_time, message_delivery_id);
+            SELECT "{0}".create_index_if_not_exists('message_delivery_fetch_part_ndx',
+                    'CREATE INDEX IF NOT EXISTS message_delivery_fetch_part_ndx on "{0}".message_delivery (queue_id, partition_key, priority, enqueue_time, message_delivery_id);');
 
-            CREATE INDEX IF NOT EXISTS message_delivery_transport_message_id_ndx ON "{0}".message_delivery (transport_message_id);
+            SELECT "{0}".create_index_if_not_exists('message_delivery_transport_message_id_ndx',
+                    'CREATE INDEX IF NOT EXISTS message_delivery_transport_message_id_ndx ON "{0}".message_delivery (transport_message_id);');
 
             CREATE OR REPLACE FUNCTION "{0}".create_queue(queue_name text, auto_delete integer DEFAULT NULL)
+                RETURNS integer
+            AS
+            $$
+            DECLARE
+                v_queue_id bigint;
+            BEGIN
+                RETURN "{0}".create_queue_v2(queue_name, auto_delete, NULL);
+            END;
+            $$ LANGUAGE plpgsql;
+
+            CREATE OR REPLACE FUNCTION "{0}".create_queue_v2(queue_name text, auto_delete integer DEFAULT NULL, max_delivery_count integer DEFAULT NULL)
                 RETURNS integer
             AS
             $$
@@ -186,18 +235,24 @@ namespace MassTransit.SqlTransport.PostgreSql
                     RAISE EXCEPTION 'Queue names must not be null or empty';
                 END IF;
 
-                INSERT INTO "{0}".queue (name, type, auto_delete) VALUES (queue_name, 1, auto_delete)
+                INSERT INTO "{0}".queue (name, type, auto_delete, max_delivery_count) VALUES (queue_name, 1, auto_delete, COALESCE(max_delivery_count, 10))
                     ON CONFLICT ON CONSTRAINT unique_queue DO
-                    UPDATE SET updated = (now() at time zone 'utc'), auto_delete = COALESCE(create_queue.auto_delete, excluded.auto_delete)
+                    UPDATE SET updated = (now() at time zone 'utc'),
+                               auto_delete = COALESCE(create_queue_v2.auto_delete, excluded.auto_delete),
+                               max_delivery_count = COALESCE(create_queue_v2.max_delivery_count, excluded.max_delivery_count, 10)
                     RETURNING queue.id INTO v_queue_id;
 
-                INSERT INTO "{0}".queue (name, type, auto_delete) VALUES (queue_name, 2, auto_delete)
+                INSERT INTO "{0}".queue (name, type, auto_delete, max_delivery_count) VALUES (queue_name, 2, auto_delete, COALESCE(max_delivery_count, 10))
                     ON CONFLICT ON CONSTRAINT unique_queue DO
-                    UPDATE SET updated = (now() at time zone 'utc'), auto_delete = COALESCE(create_queue.auto_delete, excluded.auto_delete);
+                    UPDATE SET updated = (now() at time zone 'utc'),
+                               auto_delete = COALESCE(create_queue_v2.auto_delete, excluded.auto_delete),
+                               max_delivery_count = COALESCE(create_queue_v2.max_delivery_count, excluded.max_delivery_count, 10);
 
-                INSERT INTO "{0}".queue (name, type, auto_delete) VALUES (queue_name, 3, auto_delete)
+                INSERT INTO "{0}".queue (name, type, auto_delete, max_delivery_count) VALUES (queue_name, 3, auto_delete, COALESCE(max_delivery_count, 10))
                     ON CONFLICT ON CONSTRAINT unique_queue DO
-                    UPDATE SET updated = (now() at time zone 'utc'), auto_delete = COALESCE(create_queue.auto_delete, excluded.auto_delete);
+                    UPDATE SET updated = (now() at time zone 'utc'),
+                               auto_delete = COALESCE(create_queue_v2.auto_delete, excluded.auto_delete),
+                               max_delivery_count = COALESCE(create_queue_v2.max_delivery_count, excluded.max_delivery_count, 10);
 
                 RETURN v_queue_id;
 
@@ -736,15 +791,72 @@ namespace MassTransit.SqlTransport.PostgreSql
             )
                 RETURNS bigint AS
             $$
+            BEGIN
+            RETURN "{0}".send_message_v2(entity_name
+            , priority
+            , transport_message_id
+            , body
+            , binary_body
+            , content_type
+            , message_type
+            , message_id
+            , correlation_id
+            , conversation_id
+            , request_id
+            , initiator_id
+            , source_address
+            , destination_address
+            , response_address
+            , fault_address
+            , sent_time
+            , NULL
+            , headers
+            , host
+            , partition_key
+            , routing_key
+            , delay
+            , scheduling_token_id);
+            END;
+            $$ LANGUAGE plpgsql;
+
+            CREATE OR REPLACE FUNCTION "{0}".send_message_v2(
+              entity_name text
+            , priority integer DEFAULT NULL
+            , transport_message_id uuid DEFAULT gen_random_uuid()
+            , body jsonb DEFAULT NULL
+            , binary_body bytea DEFAULT NULL
+            , content_type text DEFAULT NULL
+            , message_type text DEFAULT NULL
+            , message_id uuid DEFAULT NULL
+            , correlation_id uuid DEFAULT NULL
+            , conversation_id uuid DEFAULT NULL
+            , request_id uuid DEFAULT NULL
+            , initiator_id uuid DEFAULT NULL
+            , source_address text DEFAULT NULL
+            , destination_address text DEFAULT NULL
+            , response_address text DEFAULT NULL
+            , fault_address text DEFAULT NULL
+            , sent_time timestamptz DEFAULT NULL
+            , expiration_time timestamptz DEFAULT NULL
+            , headers jsonb DEFAULT NULL
+            , host jsonb DEFAULT NULL
+            , partition_key text DEFAULT NULL
+            , routing_key text DEFAULT NULL
+            , delay interval DEFAULT INTERVAL '0 seconds'
+            , scheduling_token_id uuid DEFAULT NULL
+            )
+                RETURNS bigint AS
+            $$
             DECLARE
                 v_queue_id     bigint;
+                v_max_delivery_count int;
                 v_enqueue_time timestamptz;
             BEGIN
                 if entity_name is null or length(entity_name) < 1 then
                     raise exception 'Queue names must not be null or empty';
                 end if;
 
-                SELECT INTO v_queue_id q.Id FROM "{0}".queue q WHERE q.name = entity_name AND q.type = 1;
+                SELECT INTO v_queue_id,v_max_delivery_count q.id,q.max_delivery_count FROM "{0}".queue q WHERE q.name = entity_name AND q.type = 1;
                 if v_queue_id IS NULL THEN
                     raise exception 'Queue not found';
                 end if;
@@ -758,8 +870,8 @@ namespace MassTransit.SqlTransport.PostgreSql
                     source_address, destination_address, response_address, fault_address, sent_time, headers, host, scheduling_token_id)
                 VALUES (transport_message_id, body, binary_body, content_type, message_type, message_id, correlation_id, conversation_id, request_id, initiator_id,
                     source_address, destination_address, response_address, fault_address, sent_time, headers, host, scheduling_token_id);
-                INSERT INTO "{0}".message_delivery (queue_id, transport_message_id, priority, enqueue_time, delivery_count, max_delivery_count, partition_key, routing_key)
-                VALUES (v_queue_id, send_message.transport_message_id, send_message.priority, v_enqueue_time, 0, send_message.max_delivery_count, send_message.partition_key, send_message.routing_key);
+                INSERT INTO "{0}".message_delivery (queue_id, transport_message_id, priority, enqueue_time, expiration_time, delivery_count, max_delivery_count, partition_key, routing_key)
+                VALUES (v_queue_id, send_message_v2.transport_message_id, send_message_v2.priority, v_enqueue_time, expiration_time, 0, v_max_delivery_count, send_message_v2.partition_key, send_message_v2.routing_key);
 
                 RETURN 1;
 
@@ -794,6 +906,63 @@ namespace MassTransit.SqlTransport.PostgreSql
             )
                 RETURNS bigint AS
             $$
+            BEGIN
+            RETURN "{0}".publish_message_v2(entity_name
+            , priority
+            , transport_message_id
+            , body
+            , binary_body
+            , content_type
+            , message_type
+            , message_id
+            , correlation_id
+            , conversation_id
+            , request_id
+            , initiator_id
+            , source_address
+            , destination_address
+            , response_address
+            , fault_address
+            , sent_time
+            , NULL
+            , headers
+            , host
+            , partition_key
+            , routing_key
+            , delay
+            , scheduling_token_id);
+            END;
+            $$ LANGUAGE plpgsql;
+
+
+            CREATE OR REPLACE FUNCTION "{0}".publish_message_v2(
+              entity_name text
+            , priority integer DEFAULT NULL
+            , transport_message_id uuid DEFAULT gen_random_uuid()
+            , body jsonb DEFAULT NULL
+            , binary_body bytea DEFAULT NULL
+            , content_type text DEFAULT NULL
+            , message_type text DEFAULT NULL
+            , message_id uuid DEFAULT NULL
+            , correlation_id uuid DEFAULT NULL
+            , conversation_id uuid DEFAULT NULL
+            , request_id uuid DEFAULT NULL
+            , initiator_id uuid DEFAULT NULL
+            , source_address text DEFAULT NULL
+            , destination_address text DEFAULT NULL
+            , response_address text DEFAULT NULL
+            , fault_address text DEFAULT NULL
+            , sent_time timestamptz DEFAULT NULL
+            , expiration_time timestamptz DEFAULT NULL
+            , headers jsonb DEFAULT NULL
+            , host jsonb DEFAULT NULL
+            , partition_key text DEFAULT NULL
+            , routing_key text DEFAULT NULL
+            , delay interval DEFAULT INTERVAL '0 seconds'
+            , scheduling_token_id uuid DEFAULT NULL
+            )
+                RETURNS bigint AS
+            $$
             DECLARE
                 v_topic_id      bigint;
                 v_enqueue_time  timestamptz;
@@ -819,15 +988,15 @@ namespace MassTransit.SqlTransport.PostgreSql
                     source_address, destination_address, response_address, fault_address, sent_time, headers, host, scheduling_token_id);
 
                 WITH delivered AS (
-                INSERT INTO "{0}".message_delivery (queue_id, transport_message_id, priority, enqueue_time, delivery_count, max_delivery_count, partition_key, routing_key)
+                INSERT INTO "{0}".message_delivery (queue_id, transport_message_id, priority, enqueue_time, expiration_time, delivery_count, max_delivery_count, partition_key, routing_key)
                 WITH RECURSIVE fabric AS (
                     SELECT source_id, destination_id
                         FROM "{0}".topic t
                         LEFT JOIN "{0}".topic_subscription ts ON t.id = ts.source_id
                         AND CASE
                             WHEN ts.sub_type = 1 THEN true
-                            WHEN ts.sub_type = 2 THEN publish_message.routing_key = ts.routing_key
-                            WHEN ts.sub_type = 3 THEN publish_message.routing_key ~ ts.routing_key
+                            WHEN ts.sub_type = 2 THEN publish_message_v2.routing_key = ts.routing_key
+                            WHEN ts.sub_type = 3 THEN publish_message_v2.routing_key ~ ts.routing_key
                             ELSE false END
                         WHERE t.id = v_topic_id
 
@@ -838,23 +1007,24 @@ namespace MassTransit.SqlTransport.PostgreSql
                         WHERE ts.source_id = fabric.destination_id
                         AND CASE
                             WHEN ts.sub_type = 1 THEN true
-                            WHEN ts.sub_type = 2 THEN publish_message.routing_key = ts.routing_key
-                            WHEN ts.sub_type = 3 THEN publish_message.routing_key ~ ts.routing_key
+                            WHEN ts.sub_type = 2 THEN publish_message_v2.routing_key = ts.routing_key
+                            WHEN ts.sub_type = 3 THEN publish_message_v2.routing_key ~ ts.routing_key
                             ELSE false END
                     )
-                SELECT DISTINCT qs.destination_id, publish_message.transport_message_id, publish_message.priority, v_enqueue_time, 0, publish_message.max_delivery_count, publish_message.partition_key, publish_message.routing_key
-                    FROM "{0}".queue_subscription qs, fabric
+                SELECT DISTINCT qs.destination_id, publish_message_v2.transport_message_id, publish_message_v2.priority, v_enqueue_time, publish_message_v2.expiration_time, 0, q.max_delivery_count, publish_message_v2.partition_key, publish_message_v2.routing_key
+                    FROM "{0}".queue_subscription qs, "{0}".queue q, fabric
                     WHERE CASE
                         WHEN qs.sub_type = 1 THEN true
-                        WHEN qs.sub_type = 2 THEN publish_message.routing_key = qs.routing_key
-                        WHEN qs.sub_type = 3 THEN publish_message.routing_key ~ qs.routing_key
+                        WHEN qs.sub_type = 2 THEN publish_message_v2.routing_key = qs.routing_key
+                        WHEN qs.sub_type = 3 THEN publish_message_v2.routing_key ~ qs.routing_key
                         ELSE false END
+                    AND qs.destination_id = q.id
                     AND (qs.source_id = fabric.destination_id OR qs.source_id = v_topic_id)
                 RETURNING message_delivery_id)
                 SELECT COUNT(d.message_delivery_id) FROM delivered d INTO v_publish_count;
 
                 IF v_publish_count = 0 THEN
-                    DELETE FROM "{0}".message WHERE message.transport_message_id = publish_message.transport_message_id;
+                    DELETE FROM "{0}".message WHERE message.transport_message_id = publish_message_v2.transport_message_id;
                 END IF;
 
                 RETURN v_publish_count;
@@ -917,7 +1087,8 @@ namespace MassTransit.SqlTransport.PostgreSql
             SELECT "{0}".create_constraint_if_not_exists('queue_metric', 'unique_queue_metric',
                     'CREATE UNIQUE INDEX IF NOT EXISTS queue_metric_ndx ON "{0}".queue_metric (start_time, duration, queue_id);ALTER TABLE "{0}".queue_metric ADD CONSTRAINT unique_queue_metric UNIQUE USING INDEX queue_metric_ndx;');
 
-            CREATE INDEX IF NOT EXISTS queue_metric_queue_id ON "{0}".queue_metric (queue_id, start_time) INCLUDE (duration);
+            SELECT "{0}".create_index_if_not_exists('queue_metric_queue_id',
+                'CREATE INDEX IF NOT EXISTS queue_metric_queue_id ON "{0}".queue_metric (queue_id, start_time) INCLUDE (duration);');
 
             CREATE OR REPLACE FUNCTION "{0}".process_metrics(row_limit int DEFAULT 10000)
                 RETURNS int
@@ -925,6 +1096,7 @@ namespace MassTransit.SqlTransport.PostgreSql
             AS
             $$
             BEGIN
+                LOCK TABLE "{0}".queue_metric IN EXCLUSIVE MODE;
                 WITH metrics AS (
                     DELETE FROM "{0}".queue_metric_capture
                         WHERE queue_metric_id < COALESCE((SELECT MIN(queue_metric_id) FROM "{0}".queue_metric_capture), 0) + row_limit
@@ -982,6 +1154,28 @@ namespace MassTransit.SqlTransport.PostgreSql
                     WHERE start_time < (now() at time zone 'utc') - interval '90 days';
 
                 RETURN 0;
+            END;
+            $$;
+
+            CREATE OR REPLACE FUNCTION "{0}".remove_orphaned_messages(row_limit int DEFAULT 10000)
+                    RETURNS int
+                    LANGUAGE PLPGSQL
+            AS
+            $$
+            DECLARE
+                v_removed_count   int;
+            BEGIN
+                DELETE FROM "{0}".message
+                    WHERE transport_message_id IN (
+                    	SELECT m.transport_message_id
+                    	    FROM "{0}".message m
+                    	    WHERE NOT EXISTS (SELECT FROM "{0}".message_delivery md WHERE md.transport_message_id = m.transport_message_id)
+                    	    LIMIT row_limit);
+
+                GET DIAGNOSTICS v_removed_count = ROW_COUNT;
+
+                RETURN v_removed_count;
+
             END;
             $$;
 
@@ -1056,6 +1250,50 @@ namespace MassTransit.SqlTransport.PostgreSql
                 GET DIAGNOSTICS v_requeue_count = ROW_COUNT;
 
                 RETURN v_requeue_count;
+            END;
+            $$;
+
+            CREATE OR REPLACE FUNCTION "{0}".dead_letter_messages(queue_name text, message_count int)
+                RETURNS int
+                LANGUAGE PLPGSQL
+            AS
+            $$
+            DECLARE
+                v_source_queue_id bigint;
+                v_target_queue_id bigint;
+                v_count           int;
+                v_current_time    timestamptz;
+            BEGIN
+                SELECT INTO v_source_queue_id q.Id FROM "{0}".queue q WHERE q.name = queue_name AND q.type = 1;
+                IF v_source_queue_id IS NULL THEN
+                    RAISE EXCEPTION 'Queue not found: %', queue_name;
+                END IF;
+
+                SELECT INTO v_target_queue_id q.Id FROM "{0}".queue q WHERE q.name = queue_name AND q.type = 3;
+                IF v_target_queue_id IS NULL THEN
+                    RAISE EXCEPTION 'Dead-Letter Queue not found: %', queue_name;
+                END IF;
+
+                v_current_time := (now() at time zone 'utc');
+
+                UPDATE "{0}".message_delivery md
+                SET queue_id = v_target_queue_id
+                FROM (SELECT mdx.message_delivery_id, queue_id
+                      FROM "{0}".message_delivery mdx
+                      WHERE mdx.queue_id = v_source_queue_id
+                        AND mdx.enqueue_time < v_current_time
+                        AND mdx.delivery_count >= mdx.max_delivery_count
+                        AND (mdx.expiration_time IS NULL OR mdx.expiration_time > v_current_time)
+                        ORDER BY mdx.message_delivery_id FOR UPDATE SKIP LOCKED LIMIT message_count) mdy
+                WHERE mdy.message_delivery_id = md.message_delivery_id;
+                GET DIAGNOSTICS v_count = ROW_COUNT;
+
+                IF v_count > 0 THEN
+                    INSERT INTO "{0}".queue_metric_capture (captured, queue_id, consume_count, error_count, dead_letter_count)
+                        VALUES (now() at time zone 'utc', v_source_queue_id, 0, 0, v_count);
+                END IF;
+
+                RETURN v_count;
             END;
             $$;
 
@@ -1135,7 +1373,8 @@ namespace MassTransit.SqlTransport.PostgreSql
                    COALESCE(SUM(x.consume_count), 0)::bigint     as consume_count,
                    COALESCE(SUM(x.error_count), 0)::bigint       as error_count,
                    COALESCE(SUM(x.dead_letter_count), 0)::bigint as dead_letter_count,
-                   COALESCE(MAX(x.duration), 0)::int             as count_duration
+                   COALESCE(MAX(x.duration), 0)::int             as count_duration,
+                   MAX(x.queue_max_delivery_count)               as queue_max_delivery_count
 
             FROM (SELECT q.name                                               as queue_name,
                          q.auto_delete                                        as queue_auto_delete,
@@ -1169,7 +1408,10 @@ namespace MassTransit.SqlTransport.PostgreSql
                          CASE
                              WHEN q.type = 3
                                  AND md.message_delivery_id IS NOT NULL THEN 1
-                             ELSE 0 END                                       as message_dead_letter
+                             ELSE 0 END                                       as message_dead_letter,
+                         CASE
+                             WHEN q.type = 1 THEN q.max_delivery_count
+                             ELSE NULL END                                    as queue_max_delivery_count
                   FROM "{0}".queue q
                            LEFT JOIN "{0}".message_delivery md ON q.id = md.queue_id
                            LEFT JOIN (SELECT DISTINCT ON (qm.queue_id) qm.queue_id,

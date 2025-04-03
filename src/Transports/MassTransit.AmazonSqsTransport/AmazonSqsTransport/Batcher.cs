@@ -20,7 +20,7 @@ namespace MassTransit.AmazonSqsTransport
         {
             _settings = settings ?? ClientContextBatchSettings.GetBatchSettings();
 
-            var channelOptions = new BoundedChannelOptions(_settings.MessageLimit)
+            var channelOptions = new BoundedChannelOptions(_settings.MessageLimit * 10)
             {
                 AllowSynchronousContinuations = false,
                 FullMode = BoundedChannelFullMode.Wait,
@@ -83,7 +83,7 @@ namespace MassTransit.AmazonSqsTransport
                         if (_channel.Reader.TryPeek(out BatchEntry<TEntry> entry))
                         {
                             var entryLength = CalculateEntryLength(entry.Entry, entryId.ToString());
-                            if (entryLength + batchLength > _settings.SizeLimit)
+                            if (entryId > 0 && entryLength + batchLength > _settings.SizeLimit)
                                 break;
 
                             batchLength += entryLength;

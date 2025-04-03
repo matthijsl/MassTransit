@@ -1,7 +1,6 @@
 namespace MassTransit.EntityFrameworkCoreIntegration
 {
     using System;
-    using System.Collections.Generic;
     using System.Linq;
     using System.Threading;
     using System.Threading.Tasks;
@@ -10,6 +9,7 @@ namespace MassTransit.EntityFrameworkCoreIntegration
     using Microsoft.Extensions.Hosting;
     using Microsoft.Extensions.Logging;
     using Microsoft.Extensions.Options;
+    using RetryPolicies;
 
 
     /// <summary>
@@ -24,6 +24,7 @@ namespace MassTransit.EntityFrameworkCoreIntegration
         readonly ILogger<InboxCleanupService<TDbContext>> _logger;
         readonly InboxCleanupServiceOptions _options;
         readonly IServiceProvider _provider;
+        readonly IRetryPolicy _retryPolicy;
 
         public InboxCleanupService(IOptions<InboxCleanupServiceOptions> options, ILogger<InboxCleanupService<TDbContext>> logger,
             IServiceProvider provider)
@@ -31,6 +32,8 @@ namespace MassTransit.EntityFrameworkCoreIntegration
             _options = options.Value;
             _logger = logger;
             _provider = provider;
+
+            _retryPolicy = Retry.Exponential(1000, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(3));
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -45,7 +48,7 @@ namespace MassTransit.EntityFrameworkCoreIntegration
                     else
                         removed = 0;
 
-                    removed = await CleanUpInboxState(stoppingToken).ConfigureAwait(false);
+                    removed = await _retryPolicy.Retry(() => CleanUpInboxState(stoppingToken), stoppingToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -70,42 +73,26 @@ namespace MassTransit.EntityFrameworkCoreIntegration
             {
                 await using var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
 
-                List<InboxState> inboxStates = await GetExpiredInboxStates(dbContext, cancellationToken);
+                using var queryTimeout = new CancellationTokenSource(_options.QueryTimeout);
+                using var queryToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, queryTimeout.Token);
 
-                if (inboxStates.Count == 0)
-                    return 0;
+                var removeTimestamp = DateTime.UtcNow - _options.DuplicateDetectionWindow;
 
-                dbContext.RemoveRange(inboxStates);
+                var count = await dbContext.Set<InboxState>()
+                    .Where(x => x.Delivered != null && x.Delivered.Value < removeTimestamp)
+                    .OrderBy(x => x.Delivered)
+                    .Take(_options.QueryMessageLimit)
+                    .ExecuteDeleteAsync(queryToken.Token).ConfigureAwait(false);
 
-                using var saveTimeout = new CancellationTokenSource(_options.QueryTimeout);
-                using var saveToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, saveTimeout.Token);
+                if (count > 0)
+                    _logger.LogDebug("Outbox Removed {Count} expired inbox messages", count);
 
-                var changed = await dbContext.SaveChangesAsync(cancellationToken);
-
-                _logger.LogDebug("Outbox Removed {Count} expired inbox messages", changed);
-
-                return changed;
+                return count;
             }
             finally
             {
                 await scope.DisposeAsync().ConfigureAwait(false);
             }
-        }
-
-        async Task<List<InboxState>> GetExpiredInboxStates(TDbContext dbContext, CancellationToken cancellationToken)
-        {
-            var messageLimit = _options.QueryMessageLimit;
-
-            var removeTimestamp = DateTime.UtcNow - _options.DuplicateDetectionWindow;
-
-            using var queryTimeout = new CancellationTokenSource(_options.QueryTimeout);
-            using var queryToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, queryTimeout.Token);
-
-            return await dbContext.Set<InboxState>()
-                .Where(x => x.Delivered != null && x.Delivered.Value < removeTimestamp)
-                .OrderBy(x => x.Delivered)
-                .Take(messageLimit)
-                .ToListAsync(queryToken.Token);
         }
     }
 }

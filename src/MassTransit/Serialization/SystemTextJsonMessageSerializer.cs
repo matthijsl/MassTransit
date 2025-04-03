@@ -10,8 +10,6 @@ namespace MassTransit.Serialization
     using Initializers;
     using Initializers.TypeConverters;
     using JsonConverters;
-    using Metadata;
-    using Internals;
 
 
     public class SystemTextJsonMessageSerializer :
@@ -87,7 +85,7 @@ namespace MassTransit.Serialization
 
                 var messageContext = new EnvelopeMessageContext(envelope, this);
 
-                var messageTypes = envelope.MessageType ?? Array.Empty<string>();
+                var messageTypes = envelope.MessageType ?? [];
 
                 return new SystemTextJsonSerializerContext(this, Options, ContentType, messageContext, messageTypes, envelope);
             }

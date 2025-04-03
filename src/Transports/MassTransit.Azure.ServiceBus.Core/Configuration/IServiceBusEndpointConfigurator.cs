@@ -8,10 +8,11 @@
         /// <summary>
         /// Specify the number of concurrent consumers (separate from prefetch count)
         /// </summary>
+        [Obsolete("Set ConcurrentMessageLimit instead (which is exactly what setting this property does)")]
         int MaxConcurrentCalls { set; }
 
         /// <summary>
-        /// True if the queue should be deleted if idle
+        /// If specified, the queue/subscription will be automatically removed after no consumer activity within the specific idle period
         /// </summary>
         TimeSpan AutoDeleteOnIdle { set; }
 

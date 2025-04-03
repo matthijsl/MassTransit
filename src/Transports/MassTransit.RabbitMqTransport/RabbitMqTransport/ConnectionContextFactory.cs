@@ -41,9 +41,22 @@
 
             context.ContinueWith(task =>
             {
-                task.Result.Connection.ConnectionShutdownAsync += HandleShutdown;
+                var connectionContext = task.Result;
 
-                contextHandle.Completed.ContinueWith(_ => task.Result.Connection.ConnectionShutdownAsync -= HandleShutdown);
+                connectionContext.Connection.ConnectionShutdownAsync += HandleShutdown;
+
+                void RemoveHandler(Task _)
+                {
+                    try
+                    {
+                        connectionContext.Connection.ConnectionShutdownAsync -= HandleShutdown;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                    }
+                }
+
+                contextHandle.Completed.ContinueWith(RemoveHandler);
             }, TaskContinuationOptions.OnlyOnRanToCompletion);
 
             return contextHandle;

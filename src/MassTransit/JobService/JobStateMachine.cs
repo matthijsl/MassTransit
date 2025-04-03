@@ -163,6 +163,7 @@ namespace MassTransit
                                     .IfElse(context => context.Saga.NextStartDate.HasValue,
                                         start => start
                                             .SendJobSlotReleased(JobSlotDisposition.Faulted)
+                                            .FinalizeJobAttempts()
                                             .WaitForNextScheduledTime(this),
                                         noStart => noStart
                                             .TransitionTo(Faulted)
@@ -343,6 +344,7 @@ namespace MassTransit
                 When(JobSubmitted)
                     .If(context => context.IsScheduledJob() && context.CalculateNextStartDate(),
                         start => start
+                            .FinalizeJobAttempts()
                             .WaitForNextScheduledTime(this)
                     )
             );
@@ -446,7 +448,11 @@ namespace MassTransit
                 }
             }
 
-            var cronExpression = new CronExpression(context.Saga.CronExpression) { TimeZone = TimeZoneInfo.Utc };
+            var timeZone = TimeZoneInfo.Utc;
+            if (!string.IsNullOrWhiteSpace(context.Saga.TimeZoneId))
+                timeZone = TimeZoneUtil.FindTimeZoneById(context.Saga.TimeZoneId);
+
+            var cronExpression = new CronExpression(context.Saga.CronExpression) { TimeZone = timeZone };
 
             var now = DateTimeOffset.UtcNow;
 
@@ -692,14 +698,20 @@ namespace MassTransit
                         Job = context.Saga.Job,
                         JobTypeId = context.Saga.JobTypeId,
                         Timestamp = context.Message.Timestamp,
-                        Duration = context.Message.Timestamp - context.Saga.Started ?? TimeSpan.Zero
+                        Duration = context.Message.Timestamp - context.Saga.Started ?? TimeSpan.Zero,
+                        JobProperties = context.Saga.JobProperties,
+                        InstanceProperties = context.Message.InstanceProperties,
+                        JobTypeProperties = context.Message.JobTypeProperties
                     })
                 .Publish<JobSaga, JobAttemptCompleted, JobCompleted>(context => new JobCompletedEvent
                 {
                     JobId = context.Saga.CorrelationId,
                     Job = context.Saga.Job,
                     Timestamp = context.Message.Timestamp,
-                    Duration = context.Message.Duration
+                    Duration = context.Message.Duration,
+                    JobProperties = context.Saga.JobProperties,
+                    InstanceProperties = context.Message.InstanceProperties,
+                    JobTypeProperties = context.Message.JobTypeProperties
                 });
         }
 
@@ -716,7 +728,7 @@ namespace MassTransit
                         RetryAttempt = context.Saga.RetryAttempt,
                         Exceptions = context.Message.Exceptions,
                         Duration = context.Message.Timestamp - context.Saga.Started
-                    })
+                    }, (context, sendContext) => sendContext.RequestId = context.Saga.CorrelationId)
                 .Publish<JobSaga, JobAttemptFaulted, JobFaulted>(context => new JobFaultedEvent
                 {
                     JobId = context.Saga.CorrelationId,
@@ -756,7 +768,7 @@ namespace MassTransit
                         RetryAttempt = context.Saga.RetryAttempt,
                         Exceptions = context.Message.Exceptions?.FirstOrDefault(),
                         Duration = context.Message.Timestamp - context.Saga.Started
-                    })
+                    }, (context, sendContext) => sendContext.RequestId = context.Saga.CorrelationId)
                 .Publish<JobSaga, Fault<StartJobAttempt>, JobFaulted>(context => new JobFaultedEvent
                 {
                     JobId = context.Saga.CorrelationId,

@@ -7,6 +7,7 @@ using Contracts.JobService;
 using Initializers;
 using JobService;
 using JobService.Messages;
+using Serialization;
 
 
 public static class RecurringJobConsumerExtensions
@@ -55,8 +56,26 @@ public static class RecurringJobConsumerExtensions
     /// <param name="cancellationToken"></param>
     /// <typeparam name="T"></typeparam>
     /// <returns></returns>
-    public static async Task<Guid> AddOrUpdateRecurringJob<T>(this IRequestClient<SubmitJob<T>> client, string jobName, T job,
+    public static Task<Guid> AddOrUpdateRecurringJob<T>(this IRequestClient<SubmitJob<T>> client, string jobName, T job,
         Action<IRecurringJobScheduleConfigurator> configure, CancellationToken cancellationToken = default)
+        where T : class
+    {
+        return AddOrUpdateRecurringJob(client, jobName, job, configure, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Add or update a recurring job
+    /// </summary>
+    /// <param name="client">An existing request client</param>
+    /// <param name="jobName"></param>
+    /// <param name="job"></param>
+    /// <param name="configure">Configure the optional recurring job schedule parameters</param>
+    /// <param name="setJobProperties">Set job properties for the recurring job</param>
+    /// <param name="cancellationToken"></param>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
+    public static async Task<Guid> AddOrUpdateRecurringJob<T>(this IRequestClient<SubmitJob<T>> client, string jobName, T job,
+        Action<IRecurringJobScheduleConfigurator> configure, Action<ISetPropertyCollection> setJobProperties, CancellationToken cancellationToken = default)
         where T : class
     {
         if (string.IsNullOrWhiteSpace(jobName))
@@ -69,12 +88,23 @@ public static class RecurringJobConsumerExtensions
 
         schedule.Validate().ThrowIfContainsFailure("The schedule configuration is invalid:");
 
-        Response<JobSubmissionAccepted> response = await client.GetResponse<JobSubmissionAccepted>(new SubmitJobCommand<T>
+        var command = new SubmitJobCommand<T>
         {
             JobId = jobId,
             Job = job,
             Schedule = schedule
-        }, cancellationToken).ConfigureAwait(false);
+        };
+
+        if (setJobProperties != null)
+        {
+            var properties = new JobPropertyCollection();
+            setJobProperties(properties);
+
+            if (properties.Count > 0)
+                command.Properties = properties;
+        }
+
+        Response<JobSubmissionAccepted> response = await client.GetResponse<JobSubmissionAccepted>(command, cancellationToken).ConfigureAwait(false);
 
         return response.Message.JobId;
     }
@@ -123,8 +153,26 @@ public static class RecurringJobConsumerExtensions
     /// <param name="cancellationToken"></param>
     /// <typeparam name="T"></typeparam>
     /// <returns></returns>
-    public static async Task<Guid> AddOrUpdateRecurringJob<T>(this IPublishEndpoint publishEndpoint, string jobName, T job,
+    public static Task<Guid> AddOrUpdateRecurringJob<T>(this IPublishEndpoint publishEndpoint, string jobName, T job,
         Action<IRecurringJobScheduleConfigurator> configure, CancellationToken cancellationToken = default)
+        where T : class
+    {
+        return AddOrUpdateRecurringJob(publishEndpoint, jobName, job, configure, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Add or update a recurring job
+    /// </summary>
+    /// <param name="publishEndpoint">An available publish endpoint instance</param>
+    /// <param name="jobName"></param>
+    /// <param name="job"></param>
+    /// <param name="configure">Configure the optional recurring job schedule parameters</param>
+    /// <param name="setJobProperties">Set job properties for the recurring job</param>
+    /// <param name="cancellationToken"></param>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
+    public static async Task<Guid> AddOrUpdateRecurringJob<T>(this IPublishEndpoint publishEndpoint, string jobName, T job,
+        Action<IRecurringJobScheduleConfigurator> configure, Action<ISetPropertyCollection> setJobProperties, CancellationToken cancellationToken = default)
         where T : class
     {
         if (string.IsNullOrWhiteSpace(jobName))
@@ -137,12 +185,71 @@ public static class RecurringJobConsumerExtensions
 
         schedule.Validate().ThrowIfContainsFailure("The schedule configuration is invalid:");
 
-        await publishEndpoint.Publish<SubmitJob<T>>(new SubmitJobCommand<T>
+        var command = new SubmitJobCommand<T>
         {
             JobId = jobId,
             Job = job,
             Schedule = schedule
+        };
+
+        if (setJobProperties != null)
+        {
+            var properties = new JobPropertyCollection();
+            setJobProperties(properties);
+
+            if (properties.Count > 0)
+                command.Properties = properties;
+        }
+
+        await publishEndpoint.Publish<SubmitJob<T>>(command, cancellationToken).ConfigureAwait(false);
+
+        return jobId;
+    }
+
+    /// <summary>
+    /// Cancel a recurring job
+    /// </summary>
+    /// <param name="publishEndpoint">An available publish endpoint instance</param>
+    /// <param name="jobName"></param>
+    /// <param name="reason">The reason for canceling the job</param>
+    /// <param name="cancellationToken"></param>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
+    public static async Task<Guid> CancelRecurringJob<T>(this IPublishEndpoint publishEndpoint, string jobName, string reason,
+        CancellationToken cancellationToken = default)
+        where T : class
+    {
+        if (string.IsNullOrWhiteSpace(jobName))
+            throw new ArgumentNullException(nameof(jobName));
+
+        var jobId = JobMetadataCache<T>.GenerateRecurringJobId(jobName);
+
+        await publishEndpoint.Publish<CancelJob>(new CancelJobCommand
+        {
+            JobId = jobId,
+            Reason = reason ?? "Unspecified"
         }, cancellationToken).ConfigureAwait(false);
+
+        return jobId;
+    }
+
+    /// <summary>
+    /// Finalize a canceled recurring job
+    /// </summary>
+    /// <param name="publishEndpoint">An available publish endpoint instance</param>
+    /// <param name="jobName"></param>
+    /// <param name="cancellationToken"></param>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
+    public static async Task<Guid> FinalizeRecurringJob<T>(this IPublishEndpoint publishEndpoint, string jobName, CancellationToken cancellationToken = default)
+        where T : class
+    {
+        if (string.IsNullOrWhiteSpace(jobName))
+            throw new ArgumentNullException(nameof(jobName));
+
+        var jobId = JobMetadataCache<T>.GenerateRecurringJobId(jobName);
+
+        await publishEndpoint.Publish<FinalizeJob>(new FinalizeJobCommand { JobId = jobId }, cancellationToken).ConfigureAwait(false);
 
         return jobId;
     }

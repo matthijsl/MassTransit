@@ -4,6 +4,7 @@ namespace MassTransit.SqlTransport.SqlServer
     using System.Threading;
     using System.Threading.Tasks;
     using Dapper;
+    using Microsoft.Data.SqlClient;
     using Microsoft.Extensions.Logging;
 
 
@@ -26,11 +27,30 @@ DROP DATABASE [{0}];";
         const string RoleExistsSql = @"SELECT DATABASE_PRINCIPAL_ID('{0}')";
         const string CreateRoleSql = @"CREATE ROLE {0} AUTHORIZATION [dbo]";
 
-        const string GrantRoleSql = @"ALTER AUTHORIZATION ON SCHEMA::{1} TO [{0}];
-GRANT CREATE TABLE to {0};
-GRANT CREATE PROCEDURE to {0};
-GRANT CREATE VIEW to {0};
-GRANT REFERENCES to {0};
+        const string GrantRoleSql = @"IF NOT EXISTS (
+    SELECT 1
+    FROM sys.schemas s
+    INNER JOIN sys.database_principals p ON s.principal_id = p.principal_id
+    WHERE s.name = '{1}' AND p.name = '{0}'
+)
+OR NOT EXISTS (
+    SELECT 1
+    FROM sys.database_permissions dp
+    WHERE dp.grantee_principal_id = DATABASE_PRINCIPAL_ID('{0}')
+      AND dp.type IN (
+          'CRTB' -- CREATE TABLE
+        , 'CRPR' -- CREATE PROCEDURE
+        , 'CRVW' -- CREATE VIEW
+        , 'RF'   -- REFERENCES
+      )
+)
+BEGIN
+    ALTER AUTHORIZATION ON SCHEMA::{1} TO [{0}];
+    GRANT CREATE TABLE TO {0};
+    GRANT CREATE PROCEDURE TO {0};
+    GRANT CREATE VIEW TO {0};
+    GRANT REFERENCES TO {0};
+END
 ";
 
         const string LoginExistsSql = @"SELECT 1 FROM sys.sql_logins WHERE [name] = '{0}'";
@@ -75,14 +95,20 @@ IF OBJECT_ID('{0}.Queue', 'U') IS NULL
 BEGIN
     CREATE TABLE {0}.Queue
     (
-        Id          bigint          not null primary key default next value for [{0}].[TopologySequence],
-        Updated     datetime2       not null default GETUTCDATE(),
+        Id               bigint          not null primary key default next value for [{0}].[TopologySequence],
+        Updated          datetime2       not null default SYSUTCDATETIME(),
 
-        Name        nvarchar(256)   not null,
-        Type        tinyint         not null,
-        AutoDelete  integer
+        Name             nvarchar(256)   not null,
+        Type             tinyint         not null,
+        AutoDelete       integer,
+        MaxDeliveryCount integer         not null DEFAULT 10
     )
 END;
+
+IF COL_LENGTH('{0}.Queue', 'MaxDeliveryCount') IS NULL
+BEGIN
+    ALTER TABLE {0}.Queue ADD MaxDeliveryCount integer not null DEFAULT 10;
+END
 
 IF NOT EXISTS(SELECT TOP 1 1 FROM sys.indexes indexes
     INNER JOIN sys.objects objects ON indexes.object_id = objects.object_id
@@ -103,7 +129,7 @@ BEGIN
     CREATE TABLE {0}.Topic
     (
         Id          bigint          not null primary key default next value for [{0}].[TopologySequence],
-        Updated     datetime2       not null default GETUTCDATE(),
+        Updated     datetime2       not null default SYSUTCDATETIME(),
 
         Name        nvarchar(256) not null
     )
@@ -121,7 +147,7 @@ BEGIN
     CREATE TABLE {0}.TopicSubscription
     (
         Id             bigint          not null primary key default next value for [{0}].[TopologySequence],
-        Updated        datetime2       not null default GETUTCDATE(),
+        Updated        datetime2       not null default SYSUTCDATETIME(),
 
         SourceId       bigint          not null references {0}.Topic (Id),
         DestinationId  bigint          not null references {0}.Topic (Id),
@@ -172,7 +198,7 @@ BEGIN
     CREATE TABLE {0}.QueueSubscription
     (
         Id             bigint          not null primary key default next value for [{0}].[TopologySequence],
-        Updated        datetime2       not null default GETUTCDATE(),
+        Updated        datetime2       not null default SYSUTCDATETIME(),
 
         SourceId       bigint          not null references {0}.Topic (Id) ON DELETE CASCADE,
         DestinationId  bigint          not null references {0}.Queue (Id) ON DELETE CASCADE,
@@ -225,7 +251,7 @@ BEGIN
         ResponseAddress     nvarchar(max),
         FaultAddress        nvarchar(max),
 
-        SentTime            datetime2 NOT NULL DEFAULT GETUTCDATE(),
+        SentTime            datetime2 NOT NULL DEFAULT SYSUTCDATETIME(),
 
         Headers             nvarchar(max),
         Host                nvarchar(max),
@@ -347,6 +373,23 @@ CREATE OR ALTER PROCEDURE {0}.CreateQueue
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @temp_table TABLE
+    (
+        Id bigint NOT NULL
+    )
+    INSERT INTO @temp_table
+        EXEC {0}.CreateQueueV2 @QueueName, @AutoDelete
+    SELECT TOP 1 Id FROM @temp_table
+END";
+
+        const string SqlFnCreateQueueV2 = @"
+CREATE OR ALTER PROCEDURE {0}.CreateQueueV2
+    @QueueName nvarchar(256),
+    @AutoDelete integer = NULL,
+    @MaxDeliveryCount integer = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
 
     IF @QueueName IS NULL OR LEN(@QueueName) < 1
     BEGIN
@@ -356,14 +399,16 @@ BEGIN
     DECLARE @QueueTable table (Id BIGINT, Type tinyint)
     MERGE INTO {0}.Queue WITH (ROWLOCK) AS target
         USING (VALUES
-                   (@QueueName, 1, @AutoDelete),
-                   (@QueueName, 2, @AutoDelete),
-                   (@QueueName, 3, @AutoDelete)
-               ) AS source (Name, Type, AutoDelete)
+                   (@QueueName, 1, @AutoDelete, @MaxDeliveryCount),
+                   (@QueueName, 2, @AutoDelete, @MaxDeliveryCount),
+                   (@QueueName, 3, @AutoDelete, @MaxDeliveryCount)
+               ) AS source (Name, Type, AutoDelete, MaxDeliveryCount)
         ON (target.Name = source.Name AND target.Type = source.Type)
-        WHEN MATCHED THEN UPDATE SET Updated = GETUTCDATE(), AutoDelete = COALESCE(source.AutoDelete, target.AutoDelete)
-        WHEN NOT MATCHED THEN INSERT (Name, Type, AutoDelete)
-        VALUES (source.Name, source.Type, source.AutoDelete)
+        WHEN MATCHED THEN UPDATE SET Updated = SYSUTCDATETIME(),
+                                     AutoDelete = COALESCE(source.AutoDelete, target.AutoDelete),
+                                     MaxDeliveryCount = COALESCE(@MaxDeliveryCount, source.MaxDeliveryCount, 10)
+        WHEN NOT MATCHED THEN INSERT (Name, Type, AutoDelete, MaxDeliveryCount)
+        VALUES (source.Name, source.Type, source.AutoDelete, COALESCE(@MaxDeliveryCount, 10))
         OUTPUT inserted.Id, inserted.Type INTO @QueueTable;
 
     SET NOCOUNT OFF
@@ -386,7 +431,7 @@ BEGIN
     MERGE INTO {0}.Topic WITH (ROWLOCK) AS target
         USING (VALUES (@TopicName)) AS source (Name)
         ON (target.Name = source.Name)
-        WHEN MATCHED THEN UPDATE SET Updated = GETUTCDATE()
+        WHEN MATCHED THEN UPDATE SET Updated = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN INSERT (Name)
         VALUES (source.Name)
         OUTPUT inserted.Id INTO @TopicTable;
@@ -421,14 +466,14 @@ BEGIN
     SELECT @SourceTopicId = t.Id FROM {0}.Topic t WHERE t.Name = @SourceTopicName;
     IF @SourceTopicId IS NULL
     BEGIN
-        THROW 50000, 'Source topic not found', 1;
+        RAISERROR('Source topic not found: %s', 16, 1, @SourceTopicName);
     END
 
     DECLARE @DestinationTopicId BIGINT
     SELECT @DestinationTopicId = t.Id FROM {0}.Topic t WHERE t.Name = @DestinationTopicName;
     IF @DestinationTopicId IS NULL
     BEGIN
-        THROW 50000, 'Destination topic not found', 1;
+        RAISERROR('Destination topic not found: %s', 16, 1, @DestinationTopicName);
     END
 
     DECLARE @ResultTable table (Id BIGINT)
@@ -437,7 +482,7 @@ BEGIN
             AS source (SourceId, DestinationId, SubType, RoutingKey, Filter)
         ON (target.SourceId = source.SourceId AND target.DestinationId = source.DestinationId AND target.SubType = source.SubType
             AND target.RoutingKey = source.RoutingKey AND target.Filter = source.Filter)
-        WHEN MATCHED THEN UPDATE SET Updated = GETUTCDATE()
+        WHEN MATCHED THEN UPDATE SET Updated = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN INSERT (SourceId, DestinationId, SubType, RoutingKey, Filter)
         VALUES (source.SourceId, source.DestinationId, source.SubType, source.RoutingKey, source.Filter)
         OUTPUT inserted.Id INTO @ResultTable;
@@ -479,7 +524,7 @@ BEGIN
     SELECT @DestinationQueueId = q.Id FROM {0}.Queue q WHERE q.Name = @DestinationQueueName AND q.Type = 1;
     IF @DestinationQueueId IS NULL
     BEGIN
-        THROW 50000, 'Destination queue not found', 1;
+        RAISERROR('Destination queue not found: %s', 16, 1, @DestinationQueueName);
     END
 
     DECLARE @ResultTable table (Id BIGINT)
@@ -488,7 +533,7 @@ BEGIN
             AS source (SourceId, DestinationId, SubType, RoutingKey, Filter)
         ON (target.SourceId = source.SourceId AND target.DestinationId = source.DestinationId AND target.SubType = source.SubType
             AND target.RoutingKey = source.RoutingKey AND target.Filter = source.Filter)
-        WHEN MATCHED THEN UPDATE SET Updated = GETUTCDATE()
+        WHEN MATCHED THEN UPDATE SET Updated = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN INSERT (SourceId, DestinationId, SubType, RoutingKey, Filter)
         VALUES (source.SourceId, source.DestinationId, source.SubType, source.RoutingKey, source.Filter)
         OUTPUT inserted.Id INTO @ResultTable;
@@ -528,15 +573,73 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    DECLARE @vDeliveryCount bigint;
+    EXEC @vDeliveryCount = {0}.PublishMessageV2
+    @entityName,
+    @priority,
+    @transportMessageId,
+    @body,
+    @binaryBody,
+    @contentType,
+    @messageType,
+    @messageId,
+    @correlationId,
+    @conversationId,
+    @requestId,
+    @initiatorId,
+    @sourceAddress,
+    @destinationAddress,
+    @responseAddress,
+    @faultAddress,
+    @sentTime,
+    NULL,
+    @headers,
+    @host,
+    @partitionKey,
+    @routingKey,
+    @delay,
+    @schedulingTokenId;
+
+    RETURN @vDeliveryCount;
+END;
+";
+
+        const string SqlFnPublishV2 = @"
+CREATE OR ALTER PROCEDURE {0}.PublishMessageV2
+    @entityName varchar(256),
+    @priority int = 100,
+    @transportMessageId uniqueidentifier,
+    @body nvarchar(max) = NULL,
+    @binaryBody varbinary(max) = NULL,
+    @contentType varchar(max) = NULL,
+    @messageType varchar(max) = NULL,
+    @messageId uniqueidentifier = NULL,
+    @correlationId uniqueidentifier = NULL,
+    @conversationId uniqueidentifier = NULL,
+    @requestId uniqueidentifier = NULL,
+    @initiatorId uniqueidentifier = NULL,
+    @sourceAddress varchar(max) = NULL,
+    @destinationAddress varchar(max) = NULL,
+    @responseAddress varchar(max) = NULL,
+    @faultAddress varchar(max) = NULL,
+    @sentTime datetimeoffset = NULL,
+    @expirationTime datetimeoffset = NULL,
+    @headers nvarchar(max) = NULL,
+    @host nvarchar(max) = NULL,
+    @partitionKey nvarchar(128) = NULL,
+    @routingKey nvarchar(256) = NULL,
+    @delay int = 0,
+    @schedulingTokenId uniqueidentifier = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
     DECLARE @vTopicId bigint;
     DECLARE @vRowCount bigint;
     DECLARE @vEnqueueTime datetimeoffset;
     DECLARE @vRow table (
         queueId bigint,
-        transportMessageId uniqueidentifier,
-        priority int,
-        enqueueTime datetimeoffset,
-        routingKey varchar(100)
+        transportMessageId uniqueidentifier
     );
 
     IF @entityName IS NULL OR LEN(@entityName) < 1
@@ -550,10 +653,10 @@ BEGIN
 
     IF @vTopicId IS NULL
     BEGIN
-        THROW 50000, 'Topic not found', 1;
+        RAISERROR('Topic not found for entityName: %s', 16, 1, @entityName);
     END;
 
-    SET @vEnqueueTime = GETUTCDATE();
+    SET @vEnqueueTime = SYSUTCDATETIME();
 
     IF @delay > 0
     BEGIN
@@ -594,14 +697,15 @@ BEGIN
             OR (ts.SubType = 2 AND @routingKey = ts.RoutingKey)
             OR (ts.SubType = 3 AND @routingKey LIKE ts.RoutingKey)
     )
-    INSERT INTO {0}.MessageDelivery (QueueId, TransportMessageId, Priority, EnqueueTime, DeliveryCount, MaxDeliveryCount, PartitionKey, RoutingKey)
-    OUTPUT inserted.QueueId, inserted.TransportMessageId, inserted.Priority, inserted.EnqueueTime, inserted.RoutingKey INTO @vRow
-    SELECT DISTINCT qs.DestinationId, @transportMessageId, @priority, @vEnqueueTime, 0, @maxDeliveryCount, @partitionKey, @routingKey
+    INSERT INTO {0}.MessageDelivery (QueueId, TransportMessageId, Priority, EnqueueTime, ExpirationTime, DeliveryCount, MaxDeliveryCount, PartitionKey, RoutingKey)
+    OUTPUT inserted.QueueId, inserted.TransportMessageId INTO @vRow
+    SELECT DISTINCT qs.DestinationId, @transportMessageId, @priority, @vEnqueueTime, @expirationTime, 0, q.MaxDeliveryCount, @partitionKey, @routingKey
     FROM {0}.QueueSubscription qs
     JOIN Fabric ON (qs.SourceId = fabric.DestinationId OR qs.SourceId = @vTopicId)
         AND (  (qs.SubType = 1)
             OR (qs.SubType = 2 AND @routingKey = qs.RoutingKey)
-            OR (qs.SubType = 3 AND @routingKey LIKE qs.RoutingKey));
+            OR (qs.SubType = 3 AND @routingKey LIKE qs.RoutingKey))
+    JOIN {0}.Queue q ON q.Id = qs.DestinationId;
 
     SELECT @vRowCount = COUNT(*) FROM @vRow;
 
@@ -644,7 +748,70 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @vQueueId int;
+    DECLARE @vDeliveryId bigint;
+    EXEC @vDeliveryId = {0}.SendMessageV2
+    @entityName,
+    @priority,
+    @transportMessageId,
+    @body,
+    @binaryBody,
+    @contentType,
+    @messageType,
+    @messageId,
+    @correlationId,
+    @conversationId,
+    @requestId,
+    @initiatorId,
+    @sourceAddress,
+    @destinationAddress,
+    @responseAddress,
+    @faultAddress,
+    @sentTime,
+    NULL,
+    @headers,
+    @host,
+    @partitionKey,
+    @routingKey,
+    @delay,
+    @schedulingTokenId;
+
+    RETURN @vDeliveryId;
+END;
+";
+
+        const string SqlFnSendV2 = @"
+CREATE OR ALTER PROCEDURE {0}.SendMessageV2
+    @entityName varchar(256),
+    @priority int = 100,
+    @transportMessageId uniqueidentifier,
+    @body nvarchar(max) = NULL,
+    @binaryBody varbinary(max) = NULL,
+    @contentType varchar(max) = NULL,
+    @messageType varchar(max) = NULL,
+    @messageId uniqueidentifier = NULL,
+    @correlationId uniqueidentifier = NULL,
+    @conversationId uniqueidentifier = NULL,
+    @requestId uniqueidentifier = NULL,
+    @initiatorId uniqueidentifier = NULL,
+    @sourceAddress varchar(max) = NULL,
+    @destinationAddress varchar(max) = NULL,
+    @responseAddress varchar(max) = NULL,
+    @faultAddress varchar(max) = NULL,
+    @sentTime datetimeoffset = NULL,
+    @expirationTime datetimeoffset = NULL,
+    @headers nvarchar(max) = NULL,
+    @host nvarchar(max) = NULL,
+    @partitionKey nvarchar(128) = NULL,
+    @routingKey nvarchar(256) = NULL,
+    @delay int = 0,
+    @schedulingTokenId uniqueidentifier = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @vDeliveryId bigint;
+    DECLARE @vQueueId bigint;
+    DECLARE @vMaxDeliveryCount int;
     DECLARE @vEnqueueTime datetimeoffset;
 
     IF @entityName IS NULL OR LEN(@entityName) < 1
@@ -652,13 +819,13 @@ BEGIN
         THROW 50000, 'Queue names must not be null or empty', 1;
     END;
 
-    SELECT @vQueueId = q.Id FROM {0}.Queue q WHERE q.Name = @entityName AND q.type = 1;
+    SELECT @vQueueId = q.Id, @vMaxDeliveryCount = q.MaxDeliveryCount FROM {0}.Queue q WHERE q.Name = @entityName AND q.type = 1;
     IF @vQueueId IS NULL
     BEGIN
-        THROW 50000, 'Queue not found', 1;
+        RAISERROR('Queue not found for entityName: %s', 16, 1, @entityName);
     END;
 
-    SET @vEnqueueTime = GETUTCDATE();
+    SET @vEnqueueTime = SYSUTCDATETIME();
 
     IF @delay > 0
     BEGIN
@@ -678,10 +845,11 @@ BEGIN
         @sentTime, @headers, @host, @schedulingTokenId
     );
 
-    INSERT INTO {0}.MessageDelivery (QueueId, TransportMessageId, Priority, EnqueueTime, DeliveryCount, MaxDeliveryCount, PartitionKey, RoutingKey)
-    VALUES (@vQueueId, @transportMessageId, @priority, @vEnqueueTime, 0, @maxDeliveryCount, @partitionKey, @routingKey)
+    INSERT INTO {0}.MessageDelivery (QueueId, TransportMessageId, Priority, EnqueueTime, ExpirationTime, DeliveryCount, MaxDeliveryCount, PartitionKey, RoutingKey)
+    VALUES (@vQueueId, @transportMessageId, @priority, @vEnqueueTime, @expirationTime, 0, @vMaxDeliveryCount, @partitionKey, @routingKey);
+    SELECT @vDeliveryId = SCOPE_IDENTITY();
 
-    RETURN 1;
+    RETURN @vDeliveryId;
 END;
 ";
 
@@ -706,7 +874,7 @@ BEGIN
 
     IF @queueId IS NULL
     BEGIN
-        THROW 50000, 'Queue not found', 1;
+        RAISERROR('Queue not found: %s', 16, 1, @queueName);
     END;
 
     IF @lockDuration <= 0
@@ -862,7 +1030,7 @@ BEGIN
 
     IF @queueId IS NULL
     BEGIN
-        THROW 50000, 'Queue not found', 1;
+        RAISERROR('Queue not found: %s', 16, 1, @queueName);
     END;
 
     IF @lockDuration <= 0
@@ -1041,7 +1209,7 @@ BEGIN
         AND NOT EXISTS (SELECT 1 FROM {0}.MessageDelivery md WHERE md.TransportMessageId = @outTransportMessageId);
 
         INSERT INTO {0}.QueueMetricCapture (Captured, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-            VALUES (GETUTCDATE(), @outQueueId, 1, 0, 0);
+            VALUES (SYSUTCDATETIME(), @outQueueId, 1, 0, 0);
     END;
 
     RETURN @outMessageDeliveryId;
@@ -1061,11 +1229,64 @@ BEGIN
 
     IF @queueId IS NULL
     BEGIN
-        THROW 50000, 'Queue not found', 1;
+        RAISERROR('Queue not found: %s', 16, 1, @queueName);
     END;
 
     INSERT INTO {0}.QueueMetricCapture (Captured, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-        VALUES (GETUTCDATE(), @queueId, 0, 0, 0);
+        VALUES (SYSUTCDATETIME(), @queueId, 0, 0, 0);
+
+END";
+
+        const string SqlFnDeadLetterMessages = @"
+CREATE OR ALTER PROCEDURE {0}.DeadLetterMessages
+    @queueName varchar(256),
+    @messageCount int
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @sourceQueueId bigint
+    SELECT @sourceQueueId = q.Id
+    FROM {0}.Queue q
+    WHERE q.Name = @queueName AND q.Type = 1;
+
+    IF @sourceQueueId IS NULL
+    BEGIN
+        RAISERROR('Queue not found: %s', 16, 1, @queueName);
+    END;
+
+    DECLARE @targetQueueId bigint
+    SELECT @targetQueueId = q.Id
+    FROM {0}.Queue q
+    WHERE q.Name = @queueName AND q.Type = 3;
+
+    IF @targetQueueId IS NULL
+    BEGIN
+        RAISERROR('Dead-letter queue not found: %s', 16, 1, @queueName);
+    END;
+
+    DECLARE @now datetime2;
+    SET @now = SYSUTCDATETIME();
+
+    UPDATE {0}.MessageDelivery
+    SET QueueId = @targetQueueId
+    FROM (SELECT mdx.MessageDeliveryId
+          FROM {0}.MessageDelivery mdx WITH (ROWLOCK, UPDLOCK)
+          WHERE mdx.QueueId = @sourceQueueId
+            AND mdx.EnqueueTime < @now
+            AND mdx.DeliveryCount >= mdx.MaxDeliveryCount
+            AND (mdx.ExpirationTime IS NULL OR mdx.ExpirationTime > @now)
+            ORDER BY mdx.MessageDeliveryId OFFSET 0 ROWS
+        FETCH NEXT @messageCount ROWS ONLY) mdy
+    WHERE mdy.MessageDeliveryId = MessageDelivery.MessageDeliveryId;
+
+    DECLARE @vRowCount bigint;
+    SELECT @vRowCount = @@ROWCOUNT;
+    IF @vRowCount = 0
+    BEGIN
+        INSERT INTO {0}.QueueMetricCapture (Captured, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
+            VALUES (SYSUTCDATETIME(), @sourceQueueId, 0, 0, @vRowCount);
+    END;
 
 END";
 
@@ -1149,7 +1370,7 @@ BEGIN
     IF @queueId IS NOT NULL
     BEGIN
         INSERT INTO {0}.QueueMetricCapture (Captured, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-            VALUES (GETUTCDATE(), @queueId, 0, 0, 0);
+            VALUES (SYSUTCDATETIME(), @queueId, 0, 0, 0);
     END;
 
     SELECT MessageDeliveryId FROM @updatedMessages;
@@ -1185,7 +1406,7 @@ BEGIN
     IF @queueId IS NOT NULL
     BEGIN
         INSERT INTO {0}.QueueMetricCapture (Captured, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-            VALUES (GETUTCDATE(), @queueId, 0, 0, 0);
+            VALUES (SYSUTCDATETIME(), @queueId, 0, 0, 0);
     END;
 
     SELECT MessageDeliveryId FROM @updatedMessages;
@@ -1209,7 +1430,7 @@ BEGIN
 
     IF @queueId IS NULL
     BEGIN
-        THROW 50000, 'Queue not found', 1;
+        RAISERROR('Queue not found: %s', 16, 1, @queueName);
     END;
 
     DECLARE @updatedMessages TABLE (
@@ -1229,10 +1450,35 @@ BEGIN
     IF @outQueueId IS NOT NULL
     BEGIN
         INSERT INTO {0}.QueueMetricCapture (Captured, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-            VALUES (GETUTCDATE(), @outQueueId, 0, CASE WHEN @queueType = 2 THEN 1 ELSE 0 END, CASE WHEN @queueType = 3 THEN 1 ELSE 0 END);
+            VALUES (SYSUTCDATETIME(), @outQueueId, 0, CASE WHEN @queueType = 2 THEN 1 ELSE 0 END, CASE WHEN @queueType = 3 THEN 1 ELSE 0 END);
     END;
 
     SELECT MessageDeliveryId FROM @updatedMessages;
+END";
+
+        const string SqlFnRemovedOrphanedMessages = @"
+CREATE OR ALTER PROCEDURE {0}.RemoveOrphanedMessages
+    @RowLimit int
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @DeletedMessages TABLE (
+        TransportMessageId uniqueidentifier INDEX DMIDX CLUSTERED
+    );
+
+    DELETE FROM {0}.Message
+        OUTPUT deleted.TransportMessageId
+        INTO @DeletedMessages
+        WHERE TransportMessageId IN (
+            SELECT m.TransportMessageId
+            FROM {0}.Message m
+            WHERE NOT EXISTS (SELECT 1 FROM {0}.MessageDelivery md WHERE md.TransportMessageId = m.TransportMessageId)
+            ORDER BY m.TransportMessageId
+            OFFSET 0 ROWS
+            FETCH NEXT @RowLimit ROWS ONLY);
+
+    SELECT COUNT(*) FROM @DeletedMessages
 END";
 
         const string SqlFnRequeueMessages = @"
@@ -1269,7 +1515,7 @@ BEGIN
 
     IF @sourceQueueId IS NULL
     BEGIN
-        THROW 50000, 'Source queue not found', 1;
+        RAISERROR('Source queue not found: %s', 16, 1, @queueName);
     END;
 
     DECLARE @targetQueueId bigint
@@ -1279,7 +1525,7 @@ BEGIN
 
     IF @targetQueueId IS NULL
     BEGIN
-        THROW 50000, 'Target queue not found', 1;
+        RAISERROR('Target queue not found: %s', 16, 1, @queueName);
     END;
 
     DECLARE @enqueueTime datetime2;
@@ -1380,120 +1626,127 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @DeletedMetrics TABLE
-                            (
-                                StartTime       datetime2 not null,
-                                Duration        int       not null,
-                                QueueId         bigint    not null,
-                                ConsumeCount    bigint    not null,
-                                ErrorCount      bigint    not null,
-                                DeadLetterCount bigint    not null
-                            );
+	DECLARE @Lock int
+	EXEC @Lock = sp_getapplock @Resource = '_MT_ProcessMetrics',
+							   @LockMode = 'Exclusive',
+							   @LockTimeout = 500
+	IF (@Lock < 0)
+	   RETURN;
 
-    DELETE
-    FROM {0}.QueueMetricCapture
-    OUTPUT CONVERT(DATETIME, CONVERT(VARCHAR(16), deleted.Captured, 120) + ':00'), 60, deleted.QueueId,
-                                                                                       deleted.ConsumeCount,
-                                                                                       deleted.ErrorCount,
-                                                                                       deleted.DeadLetterCount
-        INTO @DeletedMetrics
-    WHERE Id < COALESCE((SELECT MIN(id) FROM {0}.queuemetriccapture), 0) + @rowLimit;
+	DECLARE @DeletedMetrics TABLE
+							(
+								StartTime       datetime2 not null,
+								Duration        int       not null,
+								QueueId         bigint    not null,
+								ConsumeCount    bigint    not null,
+								ErrorCount      bigint    not null,
+								DeadLetterCount bigint    not null
+							);
 
-    MERGE INTO {0}.QueueMetric WITH (ROWLOCK) AS target
-    USING (SELECT m.StartTime,
-                  m.Duration,
-                  m.QueueId,
-                  sum(m.ConsumeCount),
-                  sum(m.ErrorCount),
-                  sum(m.DeadLetterCount)
-           FROM @DeletedMetrics m
-           GROUP BY StartTime, m.Duration, m.QueueId) as source
-        (StartTime, Duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-    ON target.StartTime = source.starttime AND target.Duration = source.duration AND
-       target.QueueId = source.QueueId
-    WHEN MATCHED THEN
-        UPDATE
-        SET ConsumeCount    = source.ConsumeCount + target.ConsumeCount,
-            ErrorCount      = source.ErrorCount + target.ErrorCount,
-            DeadLetterCount = source.DeadLetterCount + target.DeadLetterCount
-    WHEN NOT MATCHED THEN
-        INSERT (starttime, duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-        values (source.starttime, source.duration, source.QueueId, source.ConsumeCount, source.ErrorCount,
-                source.DeadLetterCount);
+	DELETE
+	FROM {0}.QueueMetricCapture
+	OUTPUT CONVERT(DATETIME, CONVERT(VARCHAR(16), deleted.Captured, 120) + ':00'), 60, deleted.QueueId,
+																					   deleted.ConsumeCount,
+																					   deleted.ErrorCount,
+																					   deleted.DeadLetterCount
+		INTO @DeletedMetrics
+	WHERE Id < COALESCE((SELECT MIN(id) FROM {0}.queuemetriccapture), 0) + @rowLimit;
 
-    DELETE
-    FROM @DeletedMetrics;
+	MERGE INTO {0}.QueueMetric WITH (TABLOCK) AS target
+	USING (SELECT m.StartTime,
+				  m.Duration,
+				  m.QueueId,
+				  sum(m.ConsumeCount),
+				  sum(m.ErrorCount),
+				  sum(m.DeadLetterCount)
+		   FROM @DeletedMetrics m
+		   GROUP BY StartTime, m.Duration, m.QueueId) as source
+		(StartTime, Duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
+	ON target.StartTime = source.starttime AND target.Duration = source.duration AND
+	   target.QueueId = source.QueueId
+	WHEN MATCHED THEN
+		UPDATE
+		SET ConsumeCount    = source.ConsumeCount + target.ConsumeCount,
+			ErrorCount      = source.ErrorCount + target.ErrorCount,
+			DeadLetterCount = source.DeadLetterCount + target.DeadLetterCount
+	WHEN NOT MATCHED THEN
+		INSERT (starttime, duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
+		values (source.starttime, source.duration, source.QueueId, source.ConsumeCount, source.ErrorCount,
+				source.DeadLetterCount);
 
-    DELETE
-    FROM {0}.QueueMetric
-    OUTPUT CONVERT(DATETIME, CONVERT(VARCHAR(13), deleted.StartTime, 120) + ':00:00'), 3600, deleted.QueueId,
-                                                                                             deleted.ConsumeCount,
-                                                                                             deleted.ErrorCount,
-                                                                                             deleted.DeadLetterCount
-        INTO @DeletedMetrics
-    WHERE Duration = 60
-      AND StartTime < DATEADD(HOUR, -8, GETUTCDATE())
+	DELETE
+	FROM @DeletedMetrics;
 
-    MERGE INTO {0}.QueueMetric WITH (ROWLOCK) AS target
-    USING (SELECT m.StartTime,
-                  m.Duration,
-                  m.QueueId,
-                  sum(m.ConsumeCount),
-                  sum(m.ErrorCount),
-                  sum(m.DeadLetterCount)
-           FROM @DeletedMetrics m
-           GROUP BY StartTime, m.Duration, m.QueueId) as source
-        (StartTime, Duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-    ON target.StartTime = source.starttime AND target.Duration = source.duration AND
-       target.QueueId = source.QueueId
-    WHEN MATCHED THEN
-        UPDATE
-        SET ConsumeCount    = source.ConsumeCount + target.ConsumeCount,
-            ErrorCount      = source.ErrorCount + target.ErrorCount,
-            DeadLetterCount = source.DeadLetterCount + target.DeadLetterCount
-    WHEN NOT MATCHED THEN
-        INSERT (starttime, duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-        values (source.starttime, source.duration, source.QueueId, source.ConsumeCount, source.ErrorCount,
-                source.DeadLetterCount);
+	DELETE
+	FROM {0}.QueueMetric
+	OUTPUT CONVERT(DATETIME, CONVERT(VARCHAR(13), deleted.StartTime, 120) + ':00:00'), 3600, deleted.QueueId,
+																							 deleted.ConsumeCount,
+																							 deleted.ErrorCount,
+																							 deleted.DeadLetterCount
+		INTO @DeletedMetrics
+	WHERE Duration = 60
+	  AND StartTime < DATEADD(HOUR, -8, SYSUTCDATETIME())
 
-    DELETE
-    FROM @DeletedMetrics;
+	MERGE INTO {0}.QueueMetric WITH (TABLOCK) AS target
+	USING (SELECT m.StartTime,
+				  m.Duration,
+				  m.QueueId,
+				  sum(m.ConsumeCount),
+				  sum(m.ErrorCount),
+				  sum(m.DeadLetterCount)
+		   FROM @DeletedMetrics m
+		   GROUP BY StartTime, m.Duration, m.QueueId) as source
+		(StartTime, Duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
+	ON target.StartTime = source.starttime AND target.Duration = source.duration AND
+	   target.QueueId = source.QueueId
+	WHEN MATCHED THEN
+		UPDATE
+		SET ConsumeCount    = source.ConsumeCount + target.ConsumeCount,
+			ErrorCount      = source.ErrorCount + target.ErrorCount,
+			DeadLetterCount = source.DeadLetterCount + target.DeadLetterCount
+	WHEN NOT MATCHED THEN
+		INSERT (starttime, duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
+		values (source.starttime, source.duration, source.QueueId, source.ConsumeCount, source.ErrorCount,
+				source.DeadLetterCount);
 
-    DELETE
-    FROM {0}.QueueMetric
-    OUTPUT CONVERT(DATETIME, CONVERT(VARCHAR(10), deleted.StartTime, 120)), 86400, deleted.QueueId,
-                                                                                   deleted.ConsumeCount,
-                                                                                   deleted.ErrorCount,
-                                                                                   deleted.DeadLetterCount
-        INTO @DeletedMetrics
-    WHERE Duration = 3600
-      AND StartTime < DATEADD(HOUR, -48, GETUTCDATE())
+	DELETE
+	FROM @DeletedMetrics;
 
-    MERGE INTO {0}.QueueMetric WITH (ROWLOCK) AS target
-    USING (SELECT m.StartTime,
-                  m.Duration,
-                  m.QueueId,
-                  sum(m.ConsumeCount),
-                  sum(m.ErrorCount),
-                  sum(m.DeadLetterCount)
-           FROM @DeletedMetrics m
-           GROUP BY StartTime, m.Duration, m.QueueId) as source
-        (StartTime, Duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-    ON target.StartTime = source.starttime AND target.Duration = source.duration AND
-       target.QueueId = source.QueueId
-    WHEN MATCHED THEN
-        UPDATE
-        SET ConsumeCount    = source.ConsumeCount + target.ConsumeCount,
-            ErrorCount      = source.ErrorCount + target.ErrorCount,
-            DeadLetterCount = source.DeadLetterCount + target.DeadLetterCount
-    WHEN NOT MATCHED THEN
-        INSERT (starttime, duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
-        values (source.starttime, source.duration, source.QueueId, source.ConsumeCount, source.ErrorCount,
-                source.DeadLetterCount);
+	DELETE
+	FROM {0}.QueueMetric
+	OUTPUT CONVERT(DATETIME, CONVERT(VARCHAR(10), deleted.StartTime, 120)), 86400, deleted.QueueId,
+																				   deleted.ConsumeCount,
+																				   deleted.ErrorCount,
+																				   deleted.DeadLetterCount
+		INTO @DeletedMetrics
+	WHERE Duration = 3600
+	  AND StartTime < DATEADD(HOUR, -48, SYSUTCDATETIME())
 
-    DELETE
-    FROM {0}.QueueMetric
-    WHERE StartTime < DATEADD(DAY, -90, GETUTCDATE());
+	MERGE INTO {0}.QueueMetric WITH (TABLOCK) AS target
+	USING (SELECT m.StartTime,
+				  m.Duration,
+				  m.QueueId,
+				  sum(m.ConsumeCount),
+				  sum(m.ErrorCount),
+				  sum(m.DeadLetterCount)
+		   FROM @DeletedMetrics m
+		   GROUP BY StartTime, m.Duration, m.QueueId) as source
+		(StartTime, Duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
+	ON target.StartTime = source.starttime AND target.Duration = source.duration AND
+	   target.QueueId = source.QueueId
+	WHEN MATCHED THEN
+		UPDATE
+		SET ConsumeCount    = source.ConsumeCount + target.ConsumeCount,
+			ErrorCount      = source.ErrorCount + target.ErrorCount,
+			DeadLetterCount = source.DeadLetterCount + target.DeadLetterCount
+	WHEN NOT MATCHED THEN
+		INSERT (starttime, duration, QueueId, ConsumeCount, ErrorCount, DeadLetterCount)
+		values (source.starttime, source.duration, source.QueueId, source.ConsumeCount, source.ErrorCount,
+				source.DeadLetterCount);
+
+	DELETE
+	FROM {0}.QueueMetric
+	WHERE StartTime < DATEADD(DAY, -90, SYSUTCDATETIME());
 END
 ";
 
@@ -1501,19 +1754,27 @@ END
 CREATE OR ALTER PROCEDURE {0}.PurgeTopology
 AS
 BEGIN
-    WITH expired AS (SELECT q.Id, q.name, DATEADD(second, -q.autodelete, GETUTCDATE()) as expires_at
-                     FROM {0}.Queue q
-                     WHERE q.Type = 1 AND  q.AutoDelete IS NOT NULL AND DATEADD(second, -q.AutoDelete, GETUTCDATE()) > Updated),
-         metrics AS (SELECT qm.queueid, MAX(starttime) as start_time
-                     FROM {0}.queuemetric qm
-                              INNER JOIN expired q2 on q2.Id = qm.QueueId
-                     WHERE DATEADD(second, duration, starttime) > q2.expires_at
-                     GROUP BY qm.queueid)
+    SET NOCOUNT ON;
+
+	DECLARE @Lock int
+	EXEC @Lock = sp_getapplock @Resource = '_MT_PurgeTopology',
+							   @LockMode = 'Exclusive',
+							   @LockTimeout = 500
+	IF (@Lock < 0)
+	   RETURN;
+
+    WITH expired AS (SELECT q.Id, q.name, DATEADD(second, -q.autodelete, SYSUTCDATETIME()) as expires_at
+                    FROM {0}.Queue q
+                    WHERE q.Type = 1 AND  q.AutoDelete IS NOT NULL AND DATEADD(second, -q.AutoDelete, SYSUTCDATETIME()) > Updated),
+        metrics AS (SELECT qm.queueid, MAX(starttime) as start_time
+                    FROM {0}.queuemetric qm
+                            INNER JOIN expired q2 on q2.Id = qm.QueueId
+                    WHERE DATEADD(second, duration, starttime) > q2.expires_at
+                    GROUP BY qm.queueid)
     DELETE FROM {0}.Queue
     FROM {0}.Queue qd
     INNER JOIN expired qdx ON qdx.Name = qd.Name
         WHERE qdx.Id NOT IN (SELECT QueueId FROM metrics);
-
 END
 ";
 
@@ -1531,7 +1792,8 @@ END
                    ISNULL(MAX(x.ErrorCount), 0)          AS ErrorCount,
                    ISNULL(MAX(x.DeadLetterCount), 0)     AS DeadLetterCount,
                    MAX(x.StartTime)                      AS CountStartTime,
-                   ISNULL(MAX(x.Duration), 0)            AS CountDuration
+                   ISNULL(MAX(x.Duration), 0)            AS CountDuration,
+                   MAX(x.QueueMaxDeliveryCount)          AS QueueMaxDeliveryCount
             FROM (SELECT q.Name                                              AS QueueName,
                          q.AutoDelete                                        AS QueueAutoDelete,
                          qm.ConsumeCount,
@@ -1542,20 +1804,21 @@ END
 
                          IIF(q.Type = 1
                                  AND md.MessageDeliveryId IS NOT NULL
-                                 AND md.EnqueueTime <= GETUTCDATE(), 1, 0)   AS MessageReady,
+                                 AND md.EnqueueTime <= SYSUTCDATETIME(), 1, 0)   AS MessageReady,
                          IIF(q.Type = 1
                                  AND md.MessageDeliveryId IS NOT NULL
                                  AND md.LockId IS NULL
-                                 AND md.EnqueueTime > GETUTCDATE(), 1, 0)    AS MessageScheduled,
+                                 AND md.EnqueueTime > SYSUTCDATETIME(), 1, 0)    AS MessageScheduled,
                          IIF(q.Type = 1
                                  AND md.MessageDeliveryId IS NOT NULL
                                  AND md.LockId IS NOT NULL
                                  AND md.DeliveryCount >= 1
-                                 AND md.EnqueueTime > GETUTCDATE(), 1, 0)    AS MessageLocked,
+                                 AND md.EnqueueTime > SYSUTCDATETIME(), 1, 0)    AS MessageLocked,
                          IIF(q.Type = 2
                                  AND md.MessageDeliveryId IS NOT NULL, 1, 0) AS MessageError,
                          IIF(q.Type = 3
-                                 AND md.MessageDeliveryId IS NOT NULL, 1, 0) AS MessageDeadLetter
+                                 AND md.MessageDeliveryId IS NOT NULL, 1, 0) AS MessageDeadLetter,
+                         IIF(q.Type = 1, q.MaxDeliveryCount, NULL)           AS QueueMaxDeliveryCount
                   FROM {0}.Queue q
                            LEFT JOIN {0}.MessageDelivery md ON q.Id = md.QueueId
                            LEFT JOIN (SELECT qm.QueueId,
@@ -1576,7 +1839,7 @@ END
                                             FROM {0}.QueueMetric qm
                                                      INNER JOIN {0}.Queue q2 ON qm.QueueId = q2.Id
                                             WHERE q2.Type = 1
-                                              AND qm.StartTime >= DATEADD(MINUTE, -5, GETUTCDATE())) qm
+                                              AND qm.StartTime >= DATEADD(MINUTE, -5, SYSUTCDATETIME())) qm
                                       WHERE qm.RowNum = 1) qm ON qm.QueueId = q.Id) x
             GROUP BY x.QueueName;
             """;
@@ -1631,12 +1894,15 @@ END
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(CreateInfrastructureSql, options.Schema)).ConfigureAwait(false);
 
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnCreateQueue, options.Schema)).ConfigureAwait(false);
+                await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnCreateQueueV2, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnCreateTopic, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnCreateTopicSubscription, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnCreateQueueSubscription, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnPurgeQueue, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnPublish, options.Schema)).ConfigureAwait(false);
+                await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnPublishV2, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnSend, options.Schema)).ConfigureAwait(false);
+                await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnSendV2, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnFetchMessages, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnFetchMessagesPartitioned, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnDeleteMessage, options.Schema)).ConfigureAwait(false);
@@ -1644,11 +1910,13 @@ END
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnRenewMessageLock, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnUnlockMessage, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnMoveMessage, options.Schema)).ConfigureAwait(false);
+                await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnRemovedOrphanedMessages, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnRequeueMessage, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnRequeueMessages, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnProcessMetrics, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnPurgeTopology, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnTouchQueue, options.Schema)).ConfigureAwait(false);
+                await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnDeadLetterMessages, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnQueuesView, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnSubscriptionsView, options.Schema)).ConfigureAwait(false);
 
@@ -1728,28 +1996,53 @@ END
 
             _logger.LogDebug("Role {Role} granted access to schema {Schema}", options.Role, options.Schema);
 
-            if (string.IsNullOrWhiteSpace(options.Username))
+            var username = options.Username;
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                var builder = new SqlConnectionStringBuilder(connection.Connection.ConnectionString);
+                if (builder.IntegratedSecurity)
+                {
+                #if NET6_0_OR_GREATER || NETSTANDARD2_1_OR_GREATER
+                    await using SqlCommand command = new("SELECT ORIGINAL_LOGIN()", connection.Connection);
+                #else
+                    using SqlCommand command = new("SELECT ORIGINAL_LOGIN()", connection.Connection);
+                #endif
+
+                    username = (await command.ExecuteScalarAsync())?.ToString();
+                }
+                else if (builder.Authentication == SqlAuthenticationMethod.ActiveDirectoryManagedIdentity)
+                {
+                #if NET6_0_OR_GREATER || NETSTANDARD2_1_OR_GREATER
+                    await using SqlCommand command = new("SELECT CURRENT_USER", connection.Connection);
+                #else
+                    using SqlCommand command = new("SELECT CURRENT_USER", connection.Connection);
+                #endif
+                    username = (await command.ExecuteScalarAsync())?.ToString();
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(username))
                 throw new ArgumentException("The SQL transport migrator requires a valid Username, but Username was not specified", nameof(options));
 
-            result = await connection.Connection.ExecuteScalarAsync<int?>(string.Format(RoleExistsSql, options.Username)).ConfigureAwait(false);
+            result = await connection.Connection.ExecuteScalarAsync<int?>(string.Format(RoleExistsSql, username)).ConfigureAwait(false);
             if (!result.HasValue)
             {
                 result = await connection.Connection
-                    .ExecuteScalarAsync<int?>(string.Format(CreateUserSql, options.Schema, options.Username))
+                    .ExecuteScalarAsync<int?>(string.Format(CreateUserSql, options.Schema, username))
                     .ConfigureAwait(false);
 
                 if (result is 1)
-                    _logger.LogDebug("User {Username} created", options.Username);
+                    _logger.LogDebug("User {Username} created", username);
             }
 
-            result = await connection.Connection.ExecuteScalarAsync<int?>(string.Format(IsRoleMemberSql, options.Role, options.Username)).ConfigureAwait(false);
+            result = await connection.Connection.ExecuteScalarAsync<int?>(string.Format(IsRoleMemberSql, options.Role, username)).ConfigureAwait(false);
             if (result is null or 0)
             {
                 await connection.Connection
-                    .ExecuteScalarAsync<int>(string.Format(AddRoleMemberSql, options.Database, options.Username, options.Role))
+                    .ExecuteScalarAsync<int>(string.Format(AddRoleMemberSql, options.Database, username, options.Role))
                     .ConfigureAwait(false);
 
-                _logger.LogDebug("User {Username} added to role {Role}", options.Username, options.Role);
+                _logger.LogDebug("User {Username} added to role {Role}", username, options.Role);
             }
         }
     }

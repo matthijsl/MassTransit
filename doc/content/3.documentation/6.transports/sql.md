@@ -43,6 +43,7 @@ The SQL transport supports:
 - Partitioned message consumption, enabling fair message consumption across tenants, customers, etc. and ordered message delivery
 - Supports all consumer types, including consumers, sagas, state machines, and routing slips
 - Transactional Outbox using Entity Framework Core
+- [Web-based UI](https://github.com/filipbekic01/resqueue) simplifies managing SQL and PostgreSQL messaging transports through a straightforward web interface
 
 ### Sample
 
@@ -270,6 +271,16 @@ x.UsingSqlServer((context, cfg) =>
 {
     cfg.UseMessagePartitionKeyFormatters();
 });
+```
+
+#### Global Topology
+
+To configure transport-specific topology conventions at a global level using `GlobalTopology`, the appropriate conventions must be added. For example, to globally configure a _PartitionKey_ formatter for a base interface on a message contract:
+
+```cs
+GlobalTopology.Send.TryAddConvention(new PartitionKeySendTopologyConvention());
+
+GlobalTopology.Send.UsePartitionKeyFormatter<ICanHasPartitionKey>(x => x.Message.PartitionKey.ToString());
 ```
 
 ### Set Receive Mode

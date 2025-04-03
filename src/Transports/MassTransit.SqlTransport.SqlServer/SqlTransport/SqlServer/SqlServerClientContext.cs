@@ -33,6 +33,7 @@ namespace MassTransit.SqlTransport.SqlServer
         readonly string _sendSql;
         readonly string _touchQueueSql;
         readonly string _unlockSql;
+        readonly string _deadLetterMessagesSql;
 
         public SqlServerClientContext(SqlServerDbConnectionContext context, CancellationToken cancellationToken)
             : base(context, cancellationToken)
@@ -40,13 +41,14 @@ namespace MassTransit.SqlTransport.SqlServer
             _context = context;
             _consumerId = NewId.NextGuid();
 
-            _createQueueSql = $"{_context.Schema}.CreateQueue";
+            _createQueueSql = $"{_context.Schema}.CreateQueueV2";
             _createTopicSql = $"{_context.Schema}.CreateTopic";
             _createTopicSubscriptionSql = $"{_context.Schema}.CreateTopicSubscription";
             _createQueueSubscriptionSql = $"{_context.Schema}.CreateQueueSubscription";
-            _sendSql = $"{_context.Schema}.SendMessage";
-            _publishSql = $"{_context.Schema}.PublishMessage";
+            _sendSql = $"{_context.Schema}.SendMessageV2";
+            _publishSql = $"{_context.Schema}.PublishMessageV2";
             _purgeQueueSql = $"{_context.Schema}.PurgeQueue";
+            _deadLetterMessagesSql = $"{_context.Schema}.DeadLetterMessages";
             _receiveSql = $"{_context.Schema}.FetchMessages";
             _receivePartitionedSql = $"{_context.Schema}.FetchMessagesPartitioned";
             _deleteMessageSql = $"{_context.Schema}.DeleteMessage";
@@ -62,7 +64,8 @@ namespace MassTransit.SqlTransport.SqlServer
             var result = await Execute<long>(_createQueueSql, new
             {
                 queueName = queue.QueueName,
-                autoDelete = (int?)queue.AutoDeleteOnIdle?.TotalSeconds
+                autoDelete = (int?)queue.AutoDeleteOnIdle?.TotalSeconds,
+                maxDeliveryCount = queue.MaxDeliveryCount
             });
 
             return result ?? throw new SqlTopologyException("Create queue failed");
@@ -147,13 +150,18 @@ namespace MassTransit.SqlTransport.SqlServer
             }
             catch (SqlException exception) when (exception.Number == 1205)
             {
-                return Array.Empty<SqlTransportMessage>();
+                return [];
             }
         }
 
         public override Task TouchQueue(string queueName)
         {
-            return Query<SqlTransportMessage>(_touchQueueSql, new { queueName });
+            return Execute<long>(_touchQueueSql, new { queueName });
+        }
+
+        public override Task<int?> DeadLetterQueue(string queueName, int messageCount)
+        {
+            return Execute<int>(_deadLetterMessagesSql, new { queueName, messageCount });
         }
 
         public override Task Send<T>(string queueName, SqlMessageSendContext<T> context)
@@ -162,6 +170,7 @@ namespace MassTransit.SqlTransport.SqlServer
             var headersAsJson = headers.Any() ? JsonSerializer.Serialize(headers, SystemTextJsonMessageSerializer.Options) : null;
 
             Guid? schedulingTokenId = context.Headers.Get<Guid>(MessageHeaders.SchedulingTokenId);
+            DateTime? expirationTime = context.TimeToLive.HasValue ? DateTime.UtcNow + context.TimeToLive.Value : null;
 
             return Execute<long>(_sendSql, new
             {
@@ -182,6 +191,7 @@ namespace MassTransit.SqlTransport.SqlServer
                 responseAddress = context.ResponseAddress,
                 faultAddress = context.FaultAddress,
                 sentTime = context.SentTime,
+                expirationTime,
                 headers = headersAsJson,
                 host = HostInfoCache.HostInfoJson,
                 partitionKey = context.PartitionKey,
@@ -197,6 +207,7 @@ namespace MassTransit.SqlTransport.SqlServer
             var headersAsJson = headers.Any() ? JsonSerializer.Serialize(headers, SystemTextJsonMessageSerializer.Options) : null;
 
             Guid? schedulingTokenId = context.Headers.Get<Guid>(MessageHeaders.SchedulingTokenId);
+            DateTime? expirationTime = context.TimeToLive.HasValue ? DateTime.UtcNow + context.TimeToLive.Value : null;
 
             return Execute<long>(_publishSql, new
             {
@@ -217,6 +228,7 @@ namespace MassTransit.SqlTransport.SqlServer
                 responseAddress = context.ResponseAddress,
                 faultAddress = context.FaultAddress,
                 sentTime = context.SentTime,
+                expirationTime,
                 headers = headersAsJson,
                 host = HostInfoCache.HostInfoJson,
                 partitionKey = context.PartitionKey,

@@ -16,6 +16,7 @@ namespace MassTransit.EntityFrameworkCoreIntegration
     using Microsoft.Extensions.Options;
     using Middleware;
     using Middleware.Outbox;
+    using RetryPolicies;
     using Serialization;
     using Util;
 
@@ -32,6 +33,7 @@ namespace MassTransit.EntityFrameworkCoreIntegration
         readonly OutboxDeliveryServiceOptions _options;
         readonly Func<TDbContext, Guid, long, int, IAsyncEnumerable<OutboxMessage>> _outboxMessagesQuery;
         readonly IServiceProvider _provider;
+        readonly IRetryPolicy _retryPolicy;
 
         string _getOutboxIdStatement;
 
@@ -55,6 +57,8 @@ namespace MassTransit.EntityFrameworkCoreIntegration
                     .OrderBy(x => x.SequenceNumber)
                     .Take(limit)
                     .AsNoTracking());
+
+            _retryPolicy = Retry.Exponential(1000, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(3));
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -71,7 +75,8 @@ namespace MassTransit.EntityFrameworkCoreIntegration
                 {
                     await _busControl.WaitForHealthStatus(BusHealthStatus.Healthy, stoppingToken).ConfigureAwait(false);
 
-                    var count = await algorithm.Run(DeliverOutbox, stoppingToken).ConfigureAwait(false);
+                    // ReSharper disable once AccessToDisposedClosure
+                    var count = await _retryPolicy.Retry(() => algorithm.Run(DeliverOutbox, stoppingToken), stoppingToken).ConfigureAwait(false);
                     if (count > 0)
                         continue;
 
@@ -83,8 +88,7 @@ namespace MassTransit.EntityFrameworkCoreIntegration
                 catch (DbUpdateConcurrencyException)
                 {
                 }
-                catch (InvalidOperationException exception) when (exception.InnerException != null
-                                                                  && exception.InnerException.Message.Contains("concurrent update"))
+                catch (InvalidOperationException exception) when (IsTransientFailure(exception))
                 {
                 }
                 catch (Exception exception)
@@ -115,10 +119,11 @@ namespace MassTransit.EntityFrameworkCoreIntegration
 
                     try
                     {
-                        var outboxState = await dbContext.Set<OutboxState>()
+                        List<OutboxState> outboxStateList = await dbContext.Set<OutboxState>()
                             .FromSqlRaw(_getOutboxIdStatement)
                             .AsTracking()
-                            .SingleOrDefaultAsync(timeoutToken.Token).ConfigureAwait(false);
+                            .ToListAsync(timeoutToken.Token).ConfigureAwait(false);
+                        var outboxState = outboxStateList.SingleOrDefault();
 
                         if (outboxState == null)
                             return -1;
@@ -147,8 +152,7 @@ namespace MassTransit.EntityFrameworkCoreIntegration
                     {
                         throw;
                     }
-                    catch (InvalidOperationException exception) when (exception.InnerException != null
-                                                                      && exception.InnerException.Message.Contains("concurrent update"))
+                    catch (InvalidOperationException exception) when (IsTransientFailure(exception))
                     {
                         throw;
                     }
@@ -184,6 +188,13 @@ namespace MassTransit.EntityFrameworkCoreIntegration
 
                 await scope.DisposeAsync().ConfigureAwait(false);
             }
+        }
+
+        static bool IsTransientFailure(Exception exception)
+        {
+            return exception.InnerException != null &&
+                (exception.InnerException.Message.Contains("concurrent update")
+                    || exception.InnerException.Message.Contains("transient failure"));
         }
 
         static async Task RemoveOutbox(TDbContext dbContext, OutboxState outboxState, CancellationToken cancellationToken)
@@ -318,9 +329,9 @@ namespace MassTransit.EntityFrameworkCoreIntegration
             {
                 await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             }
-            catch (Exception innerException)
+            catch (Exception)
             {
-                LogContext.Warning?.Log(innerException, "Transaction rollback failed");
+                //
             }
         }
     }
